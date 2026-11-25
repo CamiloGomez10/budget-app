@@ -32,7 +32,7 @@
           <div class="tx-title"><b>${esc(title)}</b>${t.recurring ? ui.pill('Återkommande', 'soft') : ''}</div>
           <p class="muted">${meta}</p>
         </div>
-        <span class="tx-amount ${income ? 'pos' : ''}">${income ? '+' : '−'}${fmt.money(t.amount)}</span>
+        <span class="tx-amount ${income || t.amount < 0 ? 'pos' : ''}">${income || t.amount < 0 ? '+' : '−'}${fmt.money(Math.abs(t.amount))}</span>
         <button class="icon-btn tx-del" data-id="${esc(t.id)}" aria-label="Ta bort ${esc(title)}">${ui.icon('x', 14)}</button>
       </li>`;
     }).join('')}</ul>
@@ -52,7 +52,7 @@
     icon: 'swap',
 
     render(s) {
-      const t = calc.monthTotals(ym(today()));
+      const t = calc.monthTotals(App.period.current());
       return `
         <div class="grid-3">
           ${ui.stat({ label: 'Inkomster denna månad', value: fmt.money(t.income), accent: 'var(--dark)' })}

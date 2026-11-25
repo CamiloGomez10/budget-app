@@ -5,7 +5,6 @@
     ['SEK', 'Svenska kronor (SEK)'], ['EUR', 'Euro (EUR)'], ['USD', 'US-dollar (USD)'],
     ['NOK', 'Norska kronor (NOK)'], ['DKK', 'Danska kronor (DKK)'], ['GBP', 'Brittiska pund (GBP)'],
   ];
-  const FREQUENCIES = [['monthly', 'Varje månad'], ['biweekly', 'Varannan vecka'], ['weekly', 'Varje vecka']];
   const GROUPS = [['needs', 'Behov'], ['wants', 'Nöje'], ['future', 'Framtid & sparande']];
   const FALLBACK_COLOR = '#8a6a55';
   let saved = false;
@@ -25,7 +24,12 @@
         body: `<p class="muted set-gap">Valutan ändrar bara hur belopp visas. Beloppen räknas inte om.</p>
           <form class="form-stack" id="setForm">
             ${ui.field('Valuta', `<select name="currency">${opt(CURRENCIES, s.settings.currency)}</select>`)}
-            ${ui.field('Budgetperiod', `<select name="frequency">${opt(FREQUENCIES, s.settings.frequency)}</select>`)}
+            ${ui.field('Budgetmånad', `<select name="periodMode">
+              <option value="calendar" ${s.settings.period?.mode !== 'payday' ? 'selected' : ''}>Kalendermånad (1:a till sista)</option>
+              <option value="payday" ${s.settings.period?.mode === 'payday' ? 'selected' : ''}>Lönemånad (lönedag till dagen före nästa)</option>
+            </select>`)}
+            ${ui.field('Lönedag', `<input type="number" name="payday" min="1" max="28" value="${esc(s.settings.period?.payday || 25)}">`)}
+            <p class="muted">Med lönemånad heter perioden efter månaden den slutar i: november = 25 okt – 24 nov. Infaller lönedagen på en helg börjar perioden fredagen innan.</p>
             ${ui.field('Budgeten börjar', `<input type="date" name="startDate" value="${esc(s.settings.startDate)}">`)}
             <button class="btn btn-primary btn-block" type="submit">Spara inställningar</button>
             ${saved ? '<p class="set-saved" role="status">✓ Sparat</p>' : ''}
@@ -79,7 +83,10 @@
         const f = new FormData(e.target);
         App.update(s => {
           s.settings.currency = f.get('currency');
-          s.settings.frequency = f.get('frequency');
+          s.settings.period = {
+            mode: f.get('periodMode') === 'payday' ? 'payday' : 'calendar',
+            payday: Math.min(28, Math.max(1, Number(f.get('payday')) || 25)),
+          };
           s.settings.startDate = f.get('startDate') || s.settings.startDate;
         });
         saved = true;

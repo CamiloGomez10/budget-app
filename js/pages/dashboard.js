@@ -1,6 +1,6 @@
 // Översikt – din ekonomi i en överblick.
 (() => {
-  const { fmt, calc, ui, charts, esc, sum, ym, today, daysInMonth, COLORS } = App;
+  const { fmt, calc, ui, charts, esc, sum, today, period, COLORS } = App;
 
   App.page({
     id: 'oversikt',
@@ -11,15 +11,19 @@
 
     render(s) {
       const now = today();
-      const key = ym(now);
-      const monthName = fmt.monthName(now.getMonth());
+      const key = period.current();
+      const monthIndex = Number(key.slice(5)) - 1;
+      const monthName = fmt.monthName(monthIndex);
+      const range = period.range(key);
+      const rangeLabel = period.rangeLabel(key);
       const t = calc.monthTotals(key);
       const plannedTotal = calc.plannedTotal(key);
       const remainingShare = t.income > 0 ? t.net / t.income : 0;
-      const daysLeft = daysInMonth(key) - now.getDate() + 1;
+      const daysLeft = period.daysLeft(key);
       const avgExp = calc.avgMonthlyExpense();
       const runway = avgExp > 0 ? calc.liquid() / avgExp : null;
-      const bills = calc.billsForMonth(key).filter(b => !b.isPaid);
+      const periodBills = calc.billsInRange(range.start, range.end);
+      const bills = periodBills.filter(b => !b.isPaid);
       const onTrack = t.net >= 0 && (plannedTotal === 0 || t.expense <= plannedTotal);
 
       const hero = `
@@ -46,7 +50,7 @@
 
       const stats = `
         <div class="grid-4">
-          ${ui.stat({ label: 'Total inkomst', value: fmt.money(t.income), hint: `Registrerat i ${monthName}`, variant: 'dark' })}
+          ${ui.stat({ label: 'Total inkomst', value: fmt.money(t.income), hint: rangeLabel ? `Lönemånad ${rangeLabel}` : `Registrerat i ${monthName}`, variant: 'dark' })}
           ${ui.stat({ label: 'Totala utgifter', value: fmt.money(t.expense), hint: t.income > 0 ? `${fmt.pct(t.expense / t.income)} av inkomsten` : '–' })}
           ${ui.stat({ label: 'Kvar av inkomsten', value: fmt.money(t.net), hint: 'Aktuellt saldo', variant: 'tan' })}
           ${ui.stat({ label: 'Totalt sparat', value: fmt.money(calc.totalSaved()), hint: `${s.goals.length} ${s.goals.length === 1 ? 'mål' : 'mål'}`, variant: 'tan' })}
@@ -61,7 +65,7 @@
         { label: 'Buffert räcker', value: runway == null ? '–' : `${fmt.num(runway, 1)} mån` },
       ]);
 
-      const year = now.getFullYear();
+      const year = Number(key.slice(0, 4));
       const months = calc.yearMonths(year);
       const cashflow = ui.card({
         overline: 'Kassaflöde',
@@ -81,7 +85,7 @@
       const spending = `
         <div class="grid-2-1">
           ${ui.card({
-            overline: 'Utgifter', title: 'Per kategori',
+            overline: rangeLabel ? `Utgifter ${rangeLabel}` : 'Utgifter', title: 'Per kategori',
             body: t.expense > 0
               ? `<div class="donut-wrap"><div id="dashDonut"></div>${charts.donutLegend(catItems)}</div>`
               : ui.empty('Inga utgifter ännu', `Utgifter i ${monthName} visas här.`),
@@ -98,7 +102,7 @@
         nwLabels.push(`${fmt.monthShort(Number(x.month.slice(5)) - 1)} ${x.month.slice(2, 4)}`);
         nwValues.push(x.netWorth);
       });
-      nwLabels.push(`${fmt.monthShort(now.getMonth())} ${String(year).slice(2)}`);
+      nwLabels.push(`${fmt.monthShort(monthIndex)} ${String(year).slice(2)}`);
       nwValues.push(calc.netWorth());
       const netWorth = ui.card({
         overline: 'Position', title: 'Nettoförmögenhet över tid',
@@ -125,8 +129,8 @@
       const upcoming = ui.card({
         overline: 'Härnäst', title: 'Kommande räkningar',
         right: '<a class="link" href="#/rakningar">Kalender</a>',
-        body: calc.billsForMonth(key).length
-          ? `<ul class="rows">${calc.billsForMonth(key).map(b => {
+        body: periodBills.length
+          ? `<ul class="rows">${periodBills.map(b => {
               const d = App.parseISO(b.date);
               return `<li>
                 <span class="date-badge ${b.debtId ? 'date-badge-dark' : ''}"><b>${d.getDate()}</b><small>${fmt.monthShort(d.getMonth())}</small></span>
@@ -134,7 +138,7 @@
                 <span class="amount" style="font-size:17px">${fmt.money0(b.amount)}</span>
               </li>`;
             }).join('')}</ul>`
-          : ui.empty('Inga räkningar denna månad', 'Lägg till räkningar under Räkningar & kalender.'),
+          : ui.empty('Inga räkningar denna period', 'Lägg till räkningar under Räkningar & kalender.'),
       });
 
       return `${hero}${summary}${stats}${strip}${cashflow}${spending}${netWorth}<div class="grid-2">${goals}${upcoming}</div>`;
@@ -142,8 +146,8 @@
 
     mount(root, s) {
       const now = today();
-      const key = ym(now);
-      const months = calc.yearMonths(now.getFullYear());
+      const key = period.current();
+      const months = calc.yearMonths(Number(key.slice(0, 4)));
       charts.bars(root.querySelector('#dashCashflow'), {
         label: 'Inkomster och utgifter per månad',
         labels: months.map(m => fmt.monthShort(m.index)),

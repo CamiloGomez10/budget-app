@@ -1,10 +1,17 @@
 // Månadsbudget – organisera inkomster och utgifter månad för månad.
 (() => {
   const { fmt, calc, ui, charts, esc, sum, today, pad2, COLORS } = App;
-  let year = today().getFullYear();
-  let month = today().getMonth();
-
-  const keyOf = () => `${year}-${pad2(month + 1)}`;
+  // Startar på aktuell budgetperiod (lönemånad eller kalendermånad). Sätts först när
+  // datan är inläst, eftersom inställningen avgör vilken period som gäller idag.
+  let year = null;
+  let month = null;
+  const init = () => {
+    if (year !== null) return;
+    const k = App.period.current();
+    year = Number(k.slice(0, 4));
+    month = Number(k.slice(5)) - 1;
+  };
+  const keyOf = () => { init(); return `${year}-${pad2(month + 1)}`; };
 
   function rows(s) {
     const key = keyOf();
@@ -68,7 +75,7 @@
         })}
         ${ui.card({
           overline: 'Månadsplan',
-          title: `Budget för ${fmt.monthName(month)}`,
+          title: `Budget för ${fmt.monthName(month)}${App.period.isPayday() ? ` <span class="muted" style="font-family:var(--sans);font-size:13px">${App.period.rangeLabel(keyOf())}</span>` : ''}`,
           right: s.budgets[keyOf()] ? '' : '<span>Använder standardbudgeten tills du ändrar något</span>',
           body: table,
         })}`;

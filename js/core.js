@@ -80,7 +80,8 @@ const App = (() => {
     const now = today();
     return {
       version: 2,
-      settings: { currency: 'SEK', frequency: 'monthly', startDate: `${now.getFullYear()}-01-01`, heroImage: null },
+      // period.mode: 'calendar' (1:a–sista) eller 'payday' (lönedag till dagen före nästa lönedag)
+      settings: { currency: 'SEK', frequency: 'monthly', startDate: `${now.getFullYear()}-01-01`, heroImage: null, period: { mode: 'calendar', payday: 25 } },
       categories: DEFAULT_CATEGORIES.map(c => ({ ...c })),
       defaultBudget: {},           // { Boende: 8500, ... } används när en månad saknar egen plan
       budgets: {},                 // { "2026-11": { Boende: 8500, ... } }
@@ -236,9 +237,57 @@ const App = (() => {
     return s;
   }
 
+  // ---------- Budgetperioder ----------
+  // En "månad" i appen har nyckeln "2026-11". Med lönemånader är det perioden som
+  // SLUTAR i november: från lönedagen i oktober till dagen före lönedagen i november
+  // (samma logik som Notion-formeln). Faller lönedagen på en helg betalas lönen ut
+  // fredagen innan, och då börjar perioden där.
+  function payDate(year, monthIndex) {
+    const day = Math.min(Number(state.settings.period?.payday) || 25, new Date(year, monthIndex + 1, 0).getDate());
+    const d = new Date(year, monthIndex, day);
+    if (d.getDay() === 6) d.setDate(d.getDate() - 1);      // lördag → fredag
+    else if (d.getDay() === 0) d.setDate(d.getDate() - 2); // söndag → fredag
+    return d;
+  }
+  const period = {
+    isPayday: () => state.settings.period?.mode === 'payday',
+    // Första dagen i perioden med nyckeln key
+    startOf(key) {
+      const [y, m] = key.split('-').map(Number);
+      return period.isPayday() ? payDate(y, m - 2) : new Date(y, m - 1, 1);
+    },
+    range(key) {
+      const start = period.startOf(key);
+      const end = period.startOf(addMonths(key, 1));
+      end.setDate(end.getDate() - 1);
+      return { start: iso(start), end: iso(end), days: Math.round((end - start) / 864e5) + 1 };
+    },
+    // Vilken period ett datum hör till
+    keyOf(date) {
+      const d = typeof date === 'string' ? parseISO(date) : date;
+      const key = ym(d);
+      return d >= period.startOf(addMonths(key, 1)) ? addMonths(key, 1) : key;
+    },
+    current: () => period.keyOf(today()),
+    // Dagar kvar av perioden, inklusive idag
+    daysLeft(key) {
+      const end = parseISO(period.range(key).end);
+      return Math.max(1, Math.round((end - today()) / 864e5) + 1);
+    },
+    // "23 okt – 24 nov" (tom sträng för vanliga kalendermånader)
+    rangeLabel(key) {
+      if (!period.isPayday()) return '';
+      const r = period.range(key);
+      return `${fmt.dateShort(r.start)} – ${fmt.dateShort(r.end)}`;
+    },
+  };
+
   // ---------- Beräkningar ----------
   const calc = {
-    txInMonth: key => state.transactions.filter(t => t.date.startsWith(key)),
+    txInMonth(key) {
+      const r = period.range(key);
+      return state.transactions.filter(t => t.date >= r.start && t.date <= r.end);
+    },
     txBetween: (from, to) => state.transactions.filter(t => t.date >= from && t.date <= to),
 
     totals(list) {
@@ -286,6 +335,15 @@ const App = (() => {
       }).sort((a, b) => a.date.localeCompare(b.date));
     },
 
+    // Räkningar med förfallodag mellan två datum (ISO), över flera kalendermånader
+    billsInRange(from, to) {
+      const out = [];
+      for (let k = from.slice(0, 7); k <= to.slice(0, 7); k = addMonths(k, 1)) {
+        out.push(...calc.billsForMonth(k).filter(b => b.date >= from && b.date <= to));
+      }
+      return out;
+    },
+
     // Månader kvar tills skulden är betald (månadsränta APR/12)
     debtMonthsRemaining(d) {
       let bal = d.balance;
@@ -300,7 +358,7 @@ const App = (() => {
 
     // Genomsnittliga utgifter för de senaste hela månaderna (max 3)
     avgMonthlyExpense() {
-      const cur = ym(today());
+      const cur = period.current();
       const months = [1, 2, 3].map(n => calc.monthTotals(addMonths(cur, -n)).expense).filter(v => v > 0);
       if (months.length) return sum(months) / months.length;
       return calc.monthTotals(cur).expense;
@@ -448,7 +506,7 @@ const App = (() => {
         const innerW = W - pad.left - pad.right;
         const innerH = H - pad.top - pad.bottom;
         // Jämnt steg först (1/2/2,5/5 × 10ⁿ), sedan max = 4 steg → axlar som 0, 15, 30, 45, 60 tn
-        const step = niceMax(Math.max(1, ...series.flatMap(s => s.values)) / 4);
+        const step = niceMax(Math.max(4, ...series.flatMap(s => s.values)) / 4);
         const max = step * 4;
         const y = v => pad.top + innerH - (Math.max(0, v) / max) * innerH;
         const n = labels.length;
@@ -700,7 +758,7 @@ const App = (() => {
     get storageKeys() { return KEYS; },
     COLORS, CATEGORY_COLORS, CURRENCIES,
     uid, esc, iso, ym, parseISO, today, daysInMonth, addMonths, sum, clamp, pad2,
-    fmt, calc, ui, charts, categoryColor, currencySymbol,
+    fmt, calc, ui, charts, period, categoryColor, currencySymbol,
     openTransactionDialog, confirm: confirmDialog, bindTooltip, tipRow,
   };
 })();

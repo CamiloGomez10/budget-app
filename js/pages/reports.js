@@ -6,10 +6,10 @@
   function monthKeys() {
     const now = today();
     if (period === '12m') {
-      const cur = ym(now);
+      const cur = App.period.current();
       return Array.from({ length: 12 }, (_, i) => addMonths(cur, i - 11));
     }
-    return Array.from({ length: 12 }, (_, i) => `${now.getFullYear()}-${App.pad2(i + 1)}`);
+    return Array.from({ length: 12 }, (_, i) => `${App.period.current().slice(0, 4)}-${App.pad2(i + 1)}`);
   }
   const label = key => fmt.monthShort(Number(key.slice(5)) - 1);
   const longLabel = key => fmt.cap(fmt.month(key));
@@ -26,12 +26,12 @@
 
     // Skuldbetalningar per månad (från registrerade betalningar på skulder)
     const payments = s.debts.flatMap(d => (d.payments || []).map(p => ({ ...p, debt: d.name })));
-    const payByMonth = keys.map(k => sum(payments.filter(p => (p.date || '').startsWith(k)).map(p => p.amount)));
+    const payByMonth = keys.map(k => sum(payments.filter(p => p.date && App.period.keyOf(p.date) === k).map(p => p.amount)));
 
-    const nw = s.snapshots.filter(x => keys.includes(x.month) && x.month < ym(today()));
+    const nw = s.snapshots.filter(x => keys.includes(x.month) && x.month < App.period.current());
     const nwLabels = nw.map(x => label(x.month));
     const nwValues = nw.map(x => x.netWorth);
-    if (keys.includes(ym(today()))) { nwLabels.push(label(ym(today()))); nwValues.push(calc.netWorth()); }
+    if (keys.includes(App.period.current())) { nwLabels.push(label(App.period.current())); nwValues.push(calc.netWorth()); }
 
     return { keys, months, tx, catItems, totalSpent: sum(Object.values(byCat)), savingsCum, payments, payByMonth, nwLabels, nwValues };
   }

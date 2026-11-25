@@ -1,7 +1,7 @@
 // Årsbudget – planera hela året med tydlighet.
 (() => {
   const { fmt, calc, ui, charts, sum, today, COLORS } = App;
-  let year = today().getFullYear();
+  let year = null; // sätts till aktuell budgetperiods år vid första visningen
   const ACCENTS = ['var(--dark)', 'var(--rose)', 'var(--caramel)', '#7f6348'];
 
   App.page({
@@ -12,6 +12,7 @@
     icon: 'bars',
 
     render() {
+      if (year === null) year = Number(App.period.current().slice(0, 4));
       const months = calc.yearMonths(year);
       const planned = sum(months.map(m => m.planned));
       const spent = sum(months.map(m => m.expense));

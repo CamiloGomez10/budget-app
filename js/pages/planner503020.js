@@ -14,7 +14,7 @@
   }
 
   function compute(s) {
-    const key = ym(today());
+    const key = App.period.current();
     const income = calc.monthTotals(key).income;
     const byCat = calc.byCategory(calc.txInMonth(key));
     const actual = { needs: 0, wants: 0, future: 0 };
@@ -37,7 +37,7 @@
     icon: 'target',
 
     render(s) {
-      const key = ym(today());
+      const key = App.period.current();
       const income = calc.monthTotals(key).income;
       const groups = compute(s);
       const allocated = sum(groups.map(g => g.actual));
