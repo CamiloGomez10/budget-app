@@ -11,16 +11,20 @@ const App = (() => {
   // ---------- Kategorier ----------
   // Färgerna är kontrollerade för färgblindhet (i den här ordningen).
   const CATEGORY_COLORS = ['#9a4a22', '#00897a', '#d08a1c', '#6b5ab2', '#7a8a12', '#c4507c', '#3f7fc4', '#7a4a8a'];
+  // Huvudkategorier för utgifter, i den ordning de visas. Inkomster visas alltid först.
+  const DEFAULT_PARENTS = ['Fasta kostnader', 'Sparande', 'Rörliga utgifter', 'Livsstil'];
   const DEFAULT_CATEGORIES = [
-    { name: 'Boende',     group: 'needs'  },
-    { name: 'Mat',        group: 'needs'  },
-    { name: 'Transport',  group: 'needs'  },
-    { name: 'Livsstil',   group: 'wants'  },
-    { name: 'Hälsa',      group: 'needs'  },
-    { name: 'Utbildning', group: 'needs'  },
-    { name: 'Sparande',   group: 'future' },
-    { name: 'Skulder',    group: 'future' },
+    { name: 'Boende',     group: 'needs',  parent: 'Fasta kostnader'  },
+    { name: 'Mat',        group: 'needs',  parent: 'Rörliga utgifter' },
+    { name: 'Transport',  group: 'needs',  parent: 'Fasta kostnader'  },
+    { name: 'Livsstil',   group: 'wants',  parent: 'Livsstil'         },
+    { name: 'Hälsa',      group: 'needs',  parent: 'Fasta kostnader'  },
+    { name: 'Utbildning', group: 'needs',  parent: 'Rörliga utgifter' },
+    { name: 'Sparande',   group: 'future', parent: 'Sparande'         },
+    { name: 'Skulder',    group: 'future', parent: 'Fasta kostnader'  },
   ].map((c, i) => ({ ...c, color: CATEGORY_COLORS[i] }));
+  const DEFAULT_INCOME = [{ name: 'Lön' }, { name: 'Övrig inkomst' }];
+  const OTHER_PARENT = 'Övrigt';
 
   const COLORS = {
     income: '#8a4522',    // inkomster / faktiskt utfall
@@ -82,7 +86,9 @@ const App = (() => {
       version: 2,
       // period.mode: 'calendar' (1:a–sista) eller 'payday' (lönedag till dagen före nästa lönedag)
       settings: { currency: 'SEK', frequency: 'monthly', startDate: `${now.getFullYear()}-01-01`, heroImage: null, period: { mode: 'calendar', payday: 25 } },
-      categories: DEFAULT_CATEGORIES.map(c => ({ ...c })),
+      categories: DEFAULT_CATEGORIES.map(c => ({ ...c })),   // utgiftskategorier (underkategorier)
+      parents: [...DEFAULT_PARENTS],                           // huvudkategorier för utgifter, i ordning
+      incomeCategories: DEFAULT_INCOME.map(c => ({ ...c })),  // underkategorier för inkomster
       defaultBudget: {},           // { Boende: 8500, ... } används när en månad saknar egen plan
       budgets: {},                 // { "2026-11": { Boende: 8500, ... } }
       transactions: [],            // { id, date, type: income|expense, category, title, account, amount, recurring }
@@ -123,7 +129,13 @@ const App = (() => {
 
   function migrate(s) {
     if (!s || s.version !== 2) return null;
-    return { ...emptyState(), ...s, settings: { ...emptyState().settings, ...s.settings } };
+    const out = { ...emptyState(), ...s, settings: { ...emptyState().settings, ...s.settings } };
+    // Äldre data utan inkomstkategorier: hämta dem från befintliga inkomster
+    if (!Array.isArray(s.incomeCategories)) {
+      const names = [...new Set((s.transactions || []).filter(t => t.type === 'income').map(t => t.category).filter(Boolean))];
+      out.incomeCategories = (names.length ? names : DEFAULT_INCOME.map(c => c.name)).map(name => ({ name }));
+    }
+    return out;
   }
 
   function save() {
@@ -176,7 +188,7 @@ const App = (() => {
     ];
     const checking = s.accounts[0].name;
 
-    s.defaultBudget = { Boende: 8500, Mat: 3500, Transport: 1800, Livsstil: 2800, Hälsa: 1200, Utbildning: 500, Sparande: 4500, Skulder: 2675 };
+    s.defaultBudget = { Lön: 42100, Boende: 8500, Mat: 3500, Transport: 1800, Livsstil: 2800, Hälsa: 1200, Utbildning: 500, Sparande: 4500, Skulder: 2675 };
     for (let m = 0; m < 12; m++) s.budgets[`${Y}-${pad2(m + 1)}`] = { ...s.defaultBudget };
 
     const tx = [];
@@ -306,7 +318,39 @@ const App = (() => {
 
     // Planerad budget för en månad (egen plan, annars standardbudgeten)
     planned: key => state.budgets[key] || state.defaultBudget || {},
-    plannedTotal: key => sum(Object.values(calc.planned(key))),
+    // Bara utgiftskategorier räknas (inkomstbudgeten ligger i samma objekt)
+    plannedTotal: key => { const p = calc.planned(key); return sum(state.categories.map(c => p[c.name])); },
+    plannedIncome: key => { const p = calc.planned(key); return sum(state.incomeCategories.map(c => p[c.name])); },
+
+    incomeByCategory(list) {
+      const out = {};
+      for (const t of list) if (t.type === 'income') out[t.category] = (out[t.category] || 0) + t.amount;
+      return out;
+    },
+
+    /**
+     * Kategorier uppdelade per huvudkategori, i ordning: Inkomster, sedan huvudkategorierna
+     * i vald ordning, sist "Övrigt". Inom varje grupp: störst budget först, sedan störst
+     * utfall, sedan namn.
+     * Returnerar [{ name, kind: 'income'|'expense', items: [{ ...kategori, planned, actual }] }]
+     */
+    grouped(key) {
+      const planned = calc.planned(key);
+      const list = calc.txInMonth(key);
+      const spent = calc.byCategory(list);
+      const earned = calc.incomeByCategory(list);
+      const sortItems = items => items.sort((a, b) => b.planned - a.planned || b.actual - a.actual || a.name.localeCompare(b.name, 'sv'));
+      const withNums = (c, actualMap) => ({ ...c, planned: Number(planned[c.name]) || 0, actual: actualMap[c.name] || 0 });
+
+      const groups = [{ name: state.incomeLabel || 'Inkomster', kind: 'income', items: sortItems(state.incomeCategories.map(c => withNums(c, earned))) }];
+      const parents = state.parents || [];
+      for (const p of parents) {
+        groups.push({ name: p, kind: 'expense', items: sortItems(state.categories.filter(c => c.parent === p).map(c => withNums(c, spent))) });
+      }
+      const rest = state.categories.filter(c => !c.parent || !parents.includes(c.parent));
+      if (rest.length) groups.push({ name: OTHER_PARENT, kind: 'expense', items: sortItems(rest.map(c => withNums(c, spent))) });
+      return groups.filter(g => g.items.length);
+    },
 
     yearMonths(year) {
       return Array.from({ length: 12 }, (_, i) => {
@@ -451,8 +495,17 @@ const App = (() => {
       return `<ul class="legend">${items.map(i => `<li><span class="swatch" style="background:${i.color}"></span>${esc(i.name)}</li>`).join('')}</ul>`;
     },
     // Select med kategorier
+    // Utgiftskategorier grupperade per huvudkategori (optgroup)
     categoryOptions(selected) {
-      return state.categories.map(c => `<option ${c.name === selected ? 'selected' : ''}>${esc(c.name)}</option>`).join('');
+      const opt = c => `<option ${c.name === selected ? 'selected' : ''}>${esc(c.name)}</option>`;
+      const parents = state.parents || [];
+      const groups = parents.map(p => [p, state.categories.filter(c => c.parent === p)]);
+      groups.push([OTHER_PARENT, state.categories.filter(c => !c.parent || !parents.includes(c.parent))]);
+      return groups.filter(([, items]) => items.length)
+        .map(([p, items]) => `<optgroup label="${esc(p)}">${items.map(opt).join('')}</optgroup>`).join('');
+    },
+    incomeOptions(selected) {
+      return state.incomeCategories.map(c => `<option ${c.name === selected ? 'selected' : ''}>${esc(c.name)}</option>`).join('');
     },
     monthOptions(selectedIndex) {
       return MONTHS.map((m, i) => `<option value="${i}" ${i === selectedIndex ? 'selected' : ''}>${fmt.cap(m)}</option>`).join('');
@@ -630,7 +683,7 @@ const App = (() => {
         <div class="form-grid">
           ${ui.field('Belopp', ui.moneyInput(`name="amount" required min="0" value="${esc(t.amount)}"`))}
           ${ui.field('Datum', `<input type="date" name="date" required value="${t.date}">`)}
-          ${ui.field('Kategori', `<select name="category">${ui.categoryOptions(t.category)}<option ${t.category === 'Lön' ? 'selected' : ''}>Lön</option><option>Övrigt</option></select>`)}
+          ${ui.field('Kategori', `<select name="category" id="txCategory"></select>`)}
           ${ui.field('Beskrivning', `<input name="title" placeholder="t.ex. ICA eller arbetsgivare" value="${esc(t.title)}">`)}
           ${ui.field('Konto', `<select name="account"><option value="">Inget konto</option>${state.accounts.map(a => `<option ${a.name === t.account ? 'selected' : ''}>${esc(a.name)}</option>`).join('')}</select>`)}
           <label class="check"><input type="checkbox" name="recurring" ${t.recurring ? 'checked' : ''}> Återkommande</label>
@@ -641,6 +694,14 @@ const App = (() => {
         </div>
       </form>`;
     const form = dlg.querySelector('#txForm');
+    // Kategorilistan följer vald typ: inkomstkategorier eller utgiftskategorier
+    const catSelect = form.querySelector('#txCategory');
+    const fillCategories = () => {
+      const isIncome = form.querySelector('[name=type]:checked').value === 'income';
+      catSelect.innerHTML = isIncome ? ui.incomeOptions(t.category) : ui.categoryOptions(t.category);
+    };
+    form.querySelectorAll('[name=type]').forEach(r => r.addEventListener('change', fillCategories));
+    fillCategories();
     dlg.querySelector('#txCancel').addEventListener('click', () => dlg.close());
     form.addEventListener('submit', e => {
       e.preventDefault();
@@ -756,7 +817,7 @@ const App = (() => {
     get state() { return state; },
     get mode() { return mode; },
     get storageKeys() { return KEYS; },
-    COLORS, CATEGORY_COLORS, CURRENCIES,
+    COLORS, CATEGORY_COLORS, CURRENCIES, OTHER_PARENT,
     uid, esc, iso, ym, parseISO, today, daysInMonth, addMonths, sum, clamp, pad2,
     fmt, calc, ui, charts, period, categoryColor, currencySymbol,
     openTransactionDialog, confirm: confirmDialog, bindTooltip, tipRow,

@@ -26,11 +26,19 @@
 .mon-table thead th:first-child { border-radius: 10px 0 0 10px; }
 .mon-table thead th:last-child { border-radius: 0 10px 10px 0; }
 .mon-table td { padding: 12px 14px; vertical-align: middle; }
-.mon-table tbody tr:nth-child(even) td { background: var(--tan-2); }
-.mon-table tbody td:first-child { width: 38%; }
-.mon-table tbody td:first-child .muted { margin: 2px 0 6px; }
+.mon-table tbody tr.mon-row:nth-child(odd) td { background: var(--tan-2); }
+.mon-group-head th, .mon-group-head td {
+  padding: 18px 14px 8px; border-bottom: 2px solid var(--dark);
+  font-size: 12px; font-weight: 600; color: var(--dark); background: transparent !important;
+}
+.mon-group-head th { text-align: left; font-family: var(--serif); font-size: 19px; }
+.mon-count { font-family: var(--sans); font-size: 11px; font-weight: 500; color: var(--muted); margin-left: 4px; }
+.mon-total td { border-top: 2px solid var(--dark) !important; }
+.mon-table tbody .mon-row td:first-child { width: 38%; }
+.mon-table tbody .mon-row td:first-child .muted { margin: 2px 0 6px; }
 .mon-table tbody td:nth-child(2) { width: 22%; }
-.mon-table tfoot td { border-top: 1px solid var(--card-border); padding-top: 14px; }
+.mon-table tfoot td { padding-top: 8px; padding-bottom: 8px; }
+.mon-table tfoot tr:first-child td { border-top: 1px solid var(--card-border); padding-top: 18px; }
 .mon-num { white-space: nowrap; }
 
 /* ---------- Lönplanering ---------- */
