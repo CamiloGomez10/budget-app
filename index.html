@@ -3,15 +3,66 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="theme-color" content="#3b251d">
   <title>Budget</title>
+  <link rel="manifest" href="manifest.json">
+  <link rel="icon" href="icon.svg" type="image/svg+xml">
+  <link rel="apple-touch-icon" href="icon.svg">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Cormorant+Garamond:wght@500;600;700&family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
   <link rel="stylesheet" href="style.css">
+  <link rel="stylesheet" href="css/pages-a.css">
+  <link rel="stylesheet" href="css/pages-b.css">
+  <link rel="stylesheet" href="css/pages-c.css">
 </head>
 <body>
-  <main class="card">
-    <h1>Hello budget 👋</h1>
-    <p>Idag är det <strong id="today"></strong>.</p>
-    <p class="amount" id="example"></p>
-  </main>
-  <script src="app.js"></script>
+  <div class="app">
+    <aside class="sidebar" id="sidebar">
+      <div class="brand">
+        <span class="brand-mark">B.</span>
+        <span class="brand-name">Budget</span>
+      </div>
+      <nav class="nav" id="nav" aria-label="Huvudmeny"></nav>
+      <div class="local-box">
+        <p class="local-title">Lokalt först</p>
+        <p>Din ekonomiska data stannar privat på den här enheten.</p>
+        <p class="local-status">● Sparat lokalt</p>
+      </div>
+    </aside>
+    <div class="scrim" id="scrim"></div>
+
+    <div class="content">
+      <header class="topbar">
+        <button class="menu-btn" id="menuBtn" aria-label="Öppna meny" aria-controls="sidebar" aria-expanded="false">
+          <svg viewBox="0 0 24 24" width="22" height="22" aria-hidden="true"><path d="M4 7h16M4 12h16M4 17h16" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></svg>
+        </button>
+        <span class="brand-name">Budget</span>
+      </header>
+      <main id="page" class="page"></main>
+    </div>
+  </div>
+  <dialog id="dialog" class="dialog"></dialog>
+  <div class="tooltip" id="tooltip" role="tooltip" hidden></div>
+
+  <script src="js/core.js"></script>
+  <!-- Sidorna registreras i menyordning -->
+  <script src="js/pages/dashboard.js"></script>
+  <script src="js/pages/annual.js"></script>
+  <script src="js/pages/monthly.js"></script>
+  <script src="js/pages/paycheck.js"></script>
+  <script src="js/pages/forecast.js"></script>
+  <script src="js/pages/transactions.js"></script>
+  <script src="js/pages/bills.js"></script>
+  <script src="js/pages/accounts.js"></script>
+  <script src="js/pages/savings.js"></script>
+  <script src="js/pages/debts.js"></script>
+  <script src="js/pages/networth.js"></script>
+  <script src="js/pages/planner503020.js"></script>
+  <script src="js/pages/nospend.js"></script>
+  <script src="js/pages/reports.js"></script>
+  <script src="js/pages/backup.js"></script>
+  <script src="js/pages/setup.js"></script>
+  <script>App.start();</script>
 </body>
 </html>

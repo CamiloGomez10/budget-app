@@ -1,0 +1,86 @@
+/* Sidor: Årsbudget, Månadsbudget, Lönplanering, Sparprognos, Transaktioner */
+
+/* ---------- Årsbudget ---------- */
+.ann-toolbar { display: flex; gap: 12px; align-items: flex-end; }
+.ann-toolbar .field { width: 140px; }
+.ann-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 14px; }
+.ann-month {
+  background: var(--card); border: 1px solid var(--card-border); border-top: 4px solid var(--ann-accent);
+  border-radius: var(--radius); box-shadow: var(--shadow); padding: 16px 18px; min-width: 0;
+  display: flex; flex-direction: column; gap: 2px;
+}
+.ann-month-head { display: flex; justify-content: space-between; align-items: center; gap: 8px; }
+.ann-month-head h3 { font-size: 20px; font-weight: 600; }
+.ann-amount { font-size: 24px; margin-top: 8px; }
+.ann-divider { height: 1px; background: var(--card-border); margin: 12px 0; }
+.ann-figs { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; margin-bottom: 12px; }
+.ann-fig { font-weight: 600; margin-top: 2px; font-variant-numeric: lining-nums tabular-nums; overflow-wrap: anywhere; }
+
+/* ---------- Månadsbudget ---------- */
+.mon-table-wrap { overflow-x: auto; margin: 0 -4px; padding: 0 4px; }
+.mon-table { width: 100%; min-width: 620px; border-collapse: separate; border-spacing: 0; font-variant-numeric: lining-nums tabular-nums; }
+.mon-table thead th {
+  background: var(--table-head); color: var(--white); text-align: left;
+  font-size: 10px; font-weight: 600; letter-spacing: 0.12em; text-transform: uppercase; padding: 10px 14px;
+}
+.mon-table thead th:first-child { border-radius: 10px 0 0 10px; }
+.mon-table thead th:last-child { border-radius: 0 10px 10px 0; }
+.mon-table td { padding: 12px 14px; vertical-align: middle; }
+.mon-table tbody tr:nth-child(even) td { background: var(--tan-2); }
+.mon-table tbody td:first-child { width: 38%; }
+.mon-table tbody td:first-child .muted { margin: 2px 0 6px; }
+.mon-table tbody td:nth-child(2) { width: 22%; }
+.mon-table tfoot td { border-top: 1px solid var(--card-border); padding-top: 14px; }
+.mon-num { white-space: nowrap; }
+
+/* ---------- Lönplanering ---------- */
+.pay-intro { margin-bottom: 14px; max-width: 560px; }
+.pay-fields { display: grid; grid-template-columns: repeat(3, 1fr); gap: 12px; }
+.pay-summary {
+  display: grid; grid-template-columns: repeat(3, 1fr); gap: 14px 0;
+  background: var(--tan); border-radius: 12px; padding: 16px 0; margin-top: 16px;
+}
+.pay-summary > div { padding: 0 20px; min-width: 0; }
+.pay-summary > div:nth-child(2), .pay-summary > div:nth-child(3) { border-left: 1px solid rgba(84, 56, 45, 0.18); }
+.pay-income { grid-column: 1 / -1; border-top: 1px solid rgba(84, 56, 45, 0.18); padding-top: 12px !important; }
+.pay-alloc { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
+.pay-alloc .field-label { display: flex; align-items: center; gap: 6px; }
+
+/* ---------- Sparprognos ---------- */
+.fc-fields { display: grid; grid-template-columns: repeat(2, 1fr); gap: 12px; margin-bottom: 16px; }
+.fc-chart-head { display: flex; justify-content: flex-end; margin: 18px 0 6px; }
+.fc-foot { margin-top: 12px; }
+
+/* ---------- Transaktioner ---------- */
+.tx-count { font-family: var(--sans); font-size: 12px; font-weight: 400; margin-left: 6px; }
+.tx-tools { display: flex; gap: 10px; margin-bottom: 6px; }
+.tx-search { flex: 1; min-width: 0; }
+.tx-search input { border-left: 3px solid var(--caramel); font-weight: 500; }
+.tx-filter { width: 160px; flex-shrink: 0; }
+.tx-icon {
+  width: 30px; height: 30px; border-radius: 50%; flex-shrink: 0;
+  display: grid; place-items: center; color: var(--white);
+}
+.tx-icon-out { background: var(--rose); }
+.tx-icon-in { background: var(--dark); }
+.tx-main { flex: 1; min-width: 0; }
+.tx-title { display: flex; align-items: center; gap: 8px; min-width: 0; }
+.tx-title b { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; min-width: 0; }
+.tx-title .pill { flex-shrink: 0; }
+.tx-more { display: flex; justify-content: center; padding-top: 12px; }
+.tx-main .muted { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.tx-amount { font-weight: 700; white-space: nowrap; font-variant-numeric: lining-nums tabular-nums; }
+
+/* ---------- Responsivt ---------- */
+@media (max-width: 1000px) {
+  .ann-grid { grid-template-columns: repeat(2, 1fr); }
+}
+@media (max-width: 760px) {
+  .ann-grid { grid-template-columns: 1fr; }
+  .pay-fields, .pay-alloc, .fc-fields { grid-template-columns: 1fr; }
+  .pay-summary { grid-template-columns: 1fr; padding: 4px 0; gap: 0; }
+  .pay-summary > div { padding: 12px 16px; }
+  .pay-summary > div + div { border-left: 0 !important; border-top: 1px solid rgba(84, 56, 45, 0.18); }
+  .tx-tools { flex-wrap: wrap; }
+  .tx-filter { width: 100%; }
+}

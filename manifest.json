@@ -1,0 +1,15 @@
+{
+  "name": "Budget",
+  "short_name": "Budget",
+  "description": "Personlig budgetapp. Din data stannar på enheten.",
+  "lang": "sv",
+  "start_url": "./index.html",
+  "scope": "./",
+  "display": "standalone",
+  "theme_color": "#3b251d",
+  "background_color": "#eeeae0",
+  "icons": [
+    { "src": "icon.svg", "sizes": "any", "type": "image/svg+xml", "purpose": "any" },
+    { "src": "icon.svg", "sizes": "any", "type": "image/svg+xml", "purpose": "maskable" }
+  ]
+}
