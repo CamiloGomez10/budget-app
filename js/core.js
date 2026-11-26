@@ -143,12 +143,33 @@ const App = (() => {
     try { localStorage.setItem(KEYS.mode, mode); } catch (e) { /* ignorera */ }
   }
 
+  // Lyssnare som får veta när den personliga datan ändrats av användaren (molnsynk).
+  const changeListeners = [];
+  function onChange(fn) { changeListeners.push(fn); }
+  function changed() {
+    if (mode !== 'personal') return;
+    changeListeners.forEach(fn => { try { fn(state); } catch (e) { console.error(e); } });
+  }
+
   // Ändra state och rita om aktuell sida.
   function update(fn) {
     fn(state);
     save();
+    changed();
     render();
   }
+
+  // Data från molnet: ersätter den personliga datan utan att räknas som en ny ändring.
+  function applyRemote(data) {
+    const next = migrate(data);
+    if (!next) return false;
+    mode = 'personal';
+    state = next;
+    save();
+    render();
+    return true;
+  }
+  function readPersonal() { return read(KEYS.personal); }
 
   function setMode(next) {
     save();
@@ -161,6 +182,7 @@ const App = (() => {
   function replaceState(next) {
     state = migrate(next) || emptyState();
     save();
+    changed();
     render();
   }
 
@@ -169,6 +191,7 @@ const App = (() => {
     mode = 'personal';
     state = emptyState();
     save();
+    changed();
     render();
   }
 
@@ -813,7 +836,7 @@ const App = (() => {
   }
 
   return {
-    page, start, update, save, render, setMode, replaceState, resetAll,
+    page, start, update, save, render, setMode, replaceState, resetAll, onChange, applyRemote, readPersonal,
     get state() { return state; },
     get mode() { return mode; },
     get storageKeys() { return KEYS; },
