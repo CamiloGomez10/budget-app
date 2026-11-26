@@ -226,6 +226,16 @@ const App = (() => {
     render();
   }
 
+  // Utloggning: ta bort all budgetdata från den här enheten (molnet påverkas inte).
+  // Räknas inte som en ändring, så inget skickas till molnet.
+  function clearLocal() {
+    try {
+      [...Object.values(KEYS), 'budget-sync', 'budget-personal-before-sync'].forEach(k => localStorage.removeItem(k));
+    } catch (e) { /* ignorera */ }
+    state = emptyState();
+    render();
+  }
+
   function resetAll() {
     try { Object.values(KEYS).forEach(k => localStorage.removeItem(k)); } catch (e) { /* ignorera */ }
     state = emptyState();
@@ -1238,7 +1248,7 @@ const App = (() => {
   }
 
   return {
-    page, start, update, save, render, replaceState, resetAll, onChange, applyRemote, readPersonal,
+    page, start, update, save, render, replaceState, resetAll, clearLocal, onChange, applyRemote, readPersonal,
     get state() { return state; },
     get mode() { return mode; },
     get storageKeys() { return KEYS; },
