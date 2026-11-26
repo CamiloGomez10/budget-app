@@ -54,7 +54,7 @@
           ${ui.stat({ label: 'Totala utgifter', value: fmt.money(t.expense), hint: t.income > 0 ? `${fmt.pct(t.expense / t.income)} av inkomsten` : '–' })}
           ${ui.stat({ label: 'Kvar av inkomsten', value: fmt.money(t.net), hint: 'Aktuellt saldo', variant: 'tan' })}
           ${ui.stat({ label: 'Totalt sparat', value: fmt.money(calc.totalSaved()), hint: `${s.goals.length} ${s.goals.length === 1 ? 'mål' : 'mål'}`, variant: 'tan' })}
-          ${ui.stat({ label: 'Total skuld', value: fmt.money(calc.totalDebt()), hint: `${s.debts.length} ${s.debts.length === 1 ? 'skuld' : 'skulder'}` })}
+          ${ui.stat({ label: 'Total skuld', value: fmt.money(calc.totalDebt()), hint: `${calc.debts().filter(d => d.balance > 0).length} aktiva` })}
           ${ui.stat({ label: 'Nettoförmögenhet', value: fmt.money(calc.netWorth()), hint: 'Tillgångar − skulder' })}
           ${ui.stat({ label: 'Kommande räkningar', value: fmt.money(sum(bills.map(b => b.amount))), hint: `${bills.length} planerade` })}
         </div>`;
@@ -98,12 +98,10 @@
 
       const nwLabels = [];
       const nwValues = [];
-      s.snapshots.filter(x => x.month.startsWith(String(year)) && x.month < key).forEach(x => {
-        nwLabels.push(`${fmt.monthShort(Number(x.month.slice(5)) - 1)} ${x.month.slice(2, 4)}`);
-        nwValues.push(x.netWorth);
+      calc.netWorthSeries(calc.historyKeys(12)).forEach(x => {
+        nwLabels.push(`${fmt.monthShort(Number(x.key.slice(5)) - 1)} ${x.key.slice(2, 4)}`);
+        nwValues.push(x.value);
       });
-      nwLabels.push(`${fmt.monthShort(monthIndex)} ${String(year).slice(2)}`);
-      nwValues.push(calc.netWorth());
       const netWorth = ui.card({
         overline: 'Position', title: 'Nettoförmögenhet över tid',
         right: `<span class="amount" style="font-size:20px;color:var(--text)">${fmt.money(calc.netWorth())}</span>`,
@@ -115,7 +113,7 @@
         overline: 'Mål', title: 'Sparmål',
         right: `<span>${s.goals.length} mål</span>`,
         body: s.goals.length
-          ? `<ul class="rows goal-rows">${s.goals.map(g => {
+          ? `<ul class="rows goal-rows">${calc.goals().map(g => {
               const share = g.target > 0 ? g.current / g.target : 0;
               return `<li><div style="flex:1;min-width:0">
                   <div class="goal-line"><b>${esc(g.name)}</b><span class="pct">${fmt.pct(share)}</span></div>

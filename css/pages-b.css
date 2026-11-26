@@ -33,9 +33,27 @@
 
 /* ---------- Konton ---------- */
 .acc-total { font-size: 17px; color: var(--text); margin-left: 4px; }
-.acc-row { flex-wrap: wrap; }
-.acc-name { flex: 1; min-width: 120px; }
-.acc-balance { display: flex; flex-direction: column; gap: 3px; width: 160px; }
+.acc-list > li.acc-item { display: block; padding: 0; }
+.acc-item details > summary { list-style: none; cursor: pointer; display: flex; align-items: center; gap: 12px; padding: 12px 0; }
+.acc-item details > summary::-webkit-details-marker { display: none; }
+.acc-name { flex: 1; min-width: 0; }
+.acc-name .pill { margin-left: 6px; vertical-align: middle; }
+.acc-amount { font-size: 17px; white-space: nowrap; }
+.acc-chevron { color: var(--muted); display: inline-grid; transition: transform .15s; }
+.acc-item details[open] .acc-chevron { transform: rotate(180deg); }
+.acc-detail { display: flex; flex-direction: column; gap: 16px; padding: 4px 0 18px 48px; }
+.acc-reconcile { background: var(--track); border-radius: 12px; padding: 12px 14px; display: flex; flex-direction: column; gap: 6px; }
+.acc-inline { display: flex; gap: 8px; align-items: center; }
+.acc-inline .input-money { flex: 1; max-width: 220px; }
+.acc-help { margin: 0; }
+.acc-cats, .acc-recent { display: flex; flex-direction: column; gap: 6px; }
+.acc-checks { display: flex; flex-wrap: wrap; gap: 0 18px; }
+.acc-checks .check { min-height: 30px; }
+.acc-tx li { display: flex; justify-content: space-between; gap: 10px; padding: 6px 0; font-size: 13px; }
+.acc-tx-name { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.acc-tx b { white-space: nowrap; }
+.acc-actions { display: flex; gap: 8px; flex-wrap: wrap; }
+.tx-move-hint { grid-column: 1 / -1; margin: -4px 0 0; color: var(--dark); }
 #accDonut { margin: 0 auto; }
 
 /* ---------- Sparande ---------- */
@@ -95,7 +113,7 @@
   .bill-cell { flex-direction: column; }
   .debt-minis, .debt-cols { grid-template-columns: repeat(2, minmax(0, 1fr)); }
   .goal-figs { grid-template-columns: repeat(2, minmax(0, 1fr)); }
-  .acc-balance { width: 100%; }
+  .acc-detail { padding-left: 0; }
   .nw-hero-value { font-size: 32px; }
   .nw-actions .btn { width: 100%; }
 }

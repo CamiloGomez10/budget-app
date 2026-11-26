@@ -1,4 +1,5 @@
 // Räkningar & kalender – förfallodagar och återkommande räkningar.
+// En räkning är betald när det finns en transaktion för den: "Betala" skapar transaktionen.
 (() => {
   const { fmt, calc, ui, esc, uid, ym, today, parseISO, daysInMonth, pad2, sum } = App;
 
@@ -29,6 +30,28 @@
   };
 
   const RECURRENCE = { monthly: 'Varje månad', yearly: 'Varje år', once: 'En gång' };
+
+  function billFields(s, b = {}) {
+    const def = calc.defaultAccount();
+    const accId = b.accountId ?? def?.id ?? '';
+    return `
+      ${ui.field('Namn', `<input name="name" required placeholder="t.ex. Internet" value="${esc(b.name ?? '')}">`)}
+      ${ui.field('Belopp', ui.moneyInput(`name="amount" required min="0" step="any" value="${b.amount ?? 0}"`))}
+      ${ui.field('Förfallodag', `<input type="date" name="dueDate" required value="${b.dueDate || ''}">`)}
+      ${ui.field('Upprepning', `<select name="recurrence">${Object.entries(RECURRENCE).map(([k, v]) => `<option value="${k}" ${k === b.recurrence ? 'selected' : ''}>${v}</option>`).join('')}</select>`)}
+      ${ui.field('Kategori', `<select name="category"><option value="">Välj kategori</option>${ui.categoryOptions(b.category)}</select>`)}
+      ${s.accounts.length ? ui.field('Betalas från', `<select name="accountId">${s.accounts.filter(a => !a.archived || a.id === accId).map(a => `<option value="${a.id}" ${a.id === accId ? 'selected' : ''}>${esc(a.name)}</option>`).join('')}</select>`) : ''}
+      ${s.debts.length ? ui.field('Kopplad skuld (valfritt)', `<select name="debtId"><option value="">Ingen</option>${s.debts.map(d => `<option value="${d.id}" ${d.id === b.debtId ? 'selected' : ''}>${esc(d.name)}</option>`).join('')}</select>`) : ''}`;
+  }
+  const readBill = f => ({
+    name: String(f.get('name')).trim(),
+    amount: Math.abs(Number(f.get('amount')) || 0),
+    dueDate: f.get('dueDate'),
+    recurrence: f.get('recurrence'),
+    category: f.get('category') || '',
+    accountId: f.get('accountId') || '',
+    debtId: f.get('debtId') || undefined,
+  });
   const WEEKDAYS = ['M', 'T', 'O', 'T', 'F', 'L', 'S'];
   let selected = ym(today());
 
@@ -47,7 +70,7 @@
       const top = `
         <div class="bill-top">
           ${ui.field('Vald månad', `<input type="month" id="billMonth" value="${selected}">`)}
-          <p class="muted">Betalstatus är en checklista. Registrera själva utgiften separat under Transaktioner.</p>
+          <p class="muted">När du trycker på <b>Betala</b> skapas utgiften under Transaktioner, och kontot (och en eventuell skuld) uppdateras. En utgift i räkningens kategori med samma belopp samma månad räknas också som betalning.</p>
         </div>`;
 
       const stats = `<div class="grid-4">
@@ -70,13 +93,12 @@
                 ${b.isPaid ? ui.pill('Betald', 'dark') : ''}
                 <span class="amount bill-amount">${fmt.money(b.amount)}</span>
               </div>
-              <p class="muted">${b.debtId ? 'Avbetalning' : RECURRENCE[b.recurrence] || ''}</p>
+              <p class="muted">${[b.debtId ? 'Avbetalning' : RECURRENCE[b.recurrence] || '', b.category, calc.accountName(b.accountId)].filter(Boolean).map(esc).join(' · ')}${b.isPaid ? ` · betald ${fmt.dateShort(b.tx.date)}` : ''}</p>
               <div class="bill-actions">
-                ${b.debtId
-                  ? (b.isPaid
-                      ? `<button class="btn btn-small" data-unpay="${b.id}">Ångra</button>`
-                      : `<button class="btn btn-secondary" data-record="${b.id}">Registrera betalning</button>`)
-                  : `<button class="btn btn-secondary" data-toggle="${b.id}">${b.isPaid ? 'Markera obetald' : 'Markera betald'}</button>`}
+                ${b.isPaid
+                  ? `<button class="btn btn-small" data-show="${b.tx.id}">Visa betalning</button>`
+                  : `<button class="btn btn-secondary" data-pay="${b.id}" data-date="${b.date}">Betala</button>`}
+                <button class="btn btn-small" data-edit="${b.id}">Redigera</button>
                 <button class="icon-btn" data-delete="${b.id}" aria-label="Ta bort ${esc(b.name)}">${ui.icon('x', 14)}</button>
               </div>
             </div>
@@ -110,11 +132,7 @@
       const add = ui.card({
         overline: 'Schema', title: 'Lägg till räkning',
         body: `<form id="billForm" class="form-stack">
-          ${ui.field('Namn', '<input name="name" required placeholder="t.ex. Internet">')}
-          ${ui.field('Belopp', ui.moneyInput('name="amount" required min="0" value="0"'))}
-          ${ui.field('Förfallodag', `<input type="date" name="dueDate" required value="${selected}-${pad2(Math.min(25, days))}">`)}
-          ${ui.field('Upprepning', `<select name="recurrence">${Object.entries(RECURRENCE).map(([k, v]) => `<option value="${k}">${v}</option>`).join('')}</select>`)}
-          ${s.debts.length ? ui.field('Kopplad skuld (valfritt)', `<select name="debtId"><option value="">Ingen</option>${s.debts.map(d => `<option value="${d.id}">${esc(d.name)}</option>`).join('')}</select>`) : ''}
+          ${billFields(s, { dueDate: `${selected}-${pad2(Math.min(25, days))}` })}
           <button class="btn btn-primary btn-block" type="submit">Lägg till i kalendern</button>
         </form>`,
       });
@@ -131,19 +149,31 @@
         const btn = e.target.closest('button');
         if (!btn) return;
         const find = id => App.state.bills.find(b => b.id === id);
-        if (btn.dataset.toggle) {
-          App.update(() => {
-            const b = find(btn.dataset.toggle);
-            b.paid = b.paid || {};
-            if (b.paid[selected]) delete b.paid[selected]; else b.paid[selected] = true;
+        if (btn.dataset.pay) {
+          // Betalningen blir en transaktion kopplad till räkningen och månaden
+          const b = find(btn.dataset.pay);
+          const date = btn.dataset.date;
+          const preset = { type: 'expense', amount: b.amount, date: date <= App.iso(today()) ? date : App.iso(today()), title: b.name, billId: b.id, billMonth: selected };
+          if (b.category) preset.category = b.category;
+          if (b.accountId) preset.accountId = b.accountId;
+          if (b.debtId) preset.debtId = b.debtId;
+          App.openTransactionDialog(preset);
+        } else if (btn.dataset.show) {
+          const t = App.state.transactions.find(x => x.id === btn.dataset.show);
+          if (t) App.openTransactionDialog({ ...t });
+        } else if (btn.dataset.edit) {
+          const b = find(btn.dataset.edit);
+          App.formDialog({
+            overline: 'Räkning', title: 'Redigera räkning', body: billFields(App.state, b),
+            onSubmit(f) {
+              const next = readBill(f);
+              if (!next.name || !next.dueDate) return false;
+              App.update(s => { const x = s.bills.find(y => y.id === b.id); Object.assign(x, next); if (!next.debtId) delete x.debtId; });
+            },
           });
-        } else if (btn.dataset.unpay) {
-          App.update(() => { const b = find(btn.dataset.unpay); if (b.paid) delete b.paid[selected]; });
-        } else if (btn.dataset.record) {
-          recordPayment(find(btn.dataset.record));
         } else if (btn.dataset.delete) {
           const b = find(btn.dataset.delete);
-          if (App.confirm(`Ta bort räkningen "${b.name}"? Den försvinner från alla månader.`)) {
+          if (App.confirm(`Ta bort räkningen "${b.name}"? Den försvinner från alla månader. Betalningar finns kvar som transaktioner.`)) {
             App.update(s => { s.bills = s.bills.filter(x => x.id !== b.id); });
           }
         }
@@ -151,43 +181,11 @@
 
       root.querySelector('#billForm').addEventListener('submit', e => {
         e.preventDefault();
-        const f = new FormData(e.target);
-        const name = String(f.get('name')).trim();
-        const amount = Math.abs(Number(f.get('amount')) || 0);
-        if (!name || !f.get('dueDate')) return;
-        App.update(s => {
-          s.bills.push({ id: uid(), name, amount, dueDate: f.get('dueDate'), recurrence: f.get('recurrence'), debtId: f.get('debtId') || undefined, paid: {} });
-        });
+        const b = readBill(new FormData(e.target));
+        if (!b.name || !b.dueDate) return;
+        App.update(s => { s.bills.push({ id: uid(), ...b }); });
       });
     },
   });
 
-  // Avbetalning: minska skulden, logga betalningen och bocka av räkningen.
-  function recordPayment(bill) {
-    const debt = App.state.debts.find(d => d.id === bill.debtId);
-    const dateInMonth = calc.billsForMonth(selected).find(b => b.id === bill.id)?.date || App.iso(today());
-    App.formDialog({
-      overline: debt ? esc(debt.name) : 'Avbetalning',
-      title: 'Registrera betalning',
-      body: `
-        ${ui.field('Belopp', ui.moneyInput(`name="amount" required min="0" value="${bill.amount}"`))}
-        ${ui.field('Datum', `<input type="date" name="date" required value="${dateInMonth}">`)}
-        ${debt ? `<p class="muted">Kvarvarande skuld efter betalningen: <b id="billAfter">${fmt.money(Math.max(0, debt.balance - bill.amount))}</b></p>` : '<p class="muted">Ingen skuld är kopplad längre; räkningen markeras bara som betald.</p>'}`,
-      submit: 'Registrera',
-      onSubmit(f) {
-        const amount = Math.abs(Number(f.get('amount')) || 0);
-        App.update(s => {
-          const b = s.bills.find(x => x.id === bill.id);
-          b.paid = b.paid || {};
-          b.paid[selected] = true;
-          const d = s.debts.find(x => x.id === bill.debtId);
-          if (d && amount > 0) {
-            d.balance = Math.max(0, Math.round((d.balance - amount) * 100) / 100);
-            d.payments = d.payments || [];
-            d.payments.push({ date: f.get('date'), amount, kind: 'installment' });
-          }
-        });
-      },
-    });
-  }
 })();

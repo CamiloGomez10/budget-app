@@ -2,12 +2,9 @@
 (() => {
   const { fmt, calc, ui, charts, esc, ym, today } = App;
 
-  // Historik: sparade ögonblicksbilder, där innevarande månad alltid visar det aktuella värdet.
-  function history(s) {
-    const cur = ym(today());
-    const rows = s.snapshots.filter(x => x.month !== cur).map(x => ({ month: x.month, value: x.netWorth }));
-    rows.push({ month: cur, value: calc.netWorth() });
-    return rows.sort((a, b) => a.month.localeCompare(b.month)).slice(-12);
+  // Historik räknas fram från konton och skulder vid slutet av varje budgetperiod.
+  function history() {
+    return calc.netWorthSeries(calc.historyKeys(12)).map(r => ({ month: r.key, value: r.value }));
   }
   const shortLabel = key => `${fmt.monthShort(Number(key.slice(5)) - 1)} ${key.slice(2, 4)}`;
 
@@ -21,8 +18,8 @@
       const nw = calc.netWorth();
       const assets = calc.assets();
       const liab = calc.totalDebt();
-      const rows = history(s);
-      const hasSnapshot = s.snapshots.some(x => x.month === ym(today()));
+      const rows = history();
+      const cur = App.period.current();
       const scale = Math.max(assets, liab, 1);
 
       const hero = `<section class="nw-hero">
@@ -37,13 +34,14 @@
         right: `<span>${rows.length} ${rows.length === 1 ? 'månad' : 'månader'}</span>`,
         body: `<div class="chart" id="nwChart"></div>
           <ul class="rows nw-list">${rows.slice().reverse().map(r => `
-            <li><span style="flex:1">${fmt.cap(fmt.month(r.month))}${r.month === ym(today()) ? ' <span class="muted">(aktuellt)</span>' : ''}</span><b>${fmt.money(r.value)}</b></li>`).join('')}</ul>`,
+            <li><span style="flex:1">${fmt.cap(fmt.month(r.month))}${r.month === cur ? ' <span class="muted">(aktuellt)</span>' : ''}</span><b>${fmt.money(r.value)}</b></li>`).join('')}</ul>`,
       });
 
-      const assetRows = s.accounts.filter(a => a.balance > 0);
+      const accs = calc.accounts();
+      const assetRows = accs.filter(a => a.balance > 0);
       const liabRows = [
-        ...s.debts.filter(d => d.balance > 0).map(d => ({ name: d.name, value: d.balance })),
-        ...s.accounts.filter(a => a.balance < 0).map(a => ({ name: a.name, value: -a.balance })),
+        ...calc.debts().filter(d => d.balance > 0).map(d => ({ name: d.name, value: d.balance })),
+        ...accs.filter(a => a.balance < 0).map(a => ({ name: a.name, value: -a.balance })),
       ];
 
       const assetsCard = ui.card({
@@ -59,15 +57,12 @@
           ${liabRows.length ? `<ul class="rows">${liabRows.map(l => `<li><span style="flex:1">${esc(l.name)}</span><b>${fmt.money(l.value)}</b></li>`).join('')}</ul>` : '<p class="muted">Inga skulder. Snyggt!</p>'}`,
       });
 
-      return `<div class="nw-actions">
-          <button class="btn btn-primary" id="nwSnapshot">Spara månadens ögonblicksbild</button>
-          <span class="muted">${hasSnapshot ? `Senast sparad för ${fmt.month(ym(today()))}. Sparar du igen skrivs den över.` : 'Sparar tillgångar, skulder och nettoförmögenhet för den här månaden.'}</span>
-        </div>
+      return `${ui.note('<b>Räknas fram automatiskt</b>Historiken räknas ut från dina konton och skulder vid slutet av varje budgetmånad. Du behöver inte spara något själv.')}
         ${hero}${historyCard}<div class="grid-2">${assetsCard}${liabCard}</div>`;
     },
 
-    mount(root, s) {
-      const rows = history(s);
+    mount(root) {
+      const rows = history();
       const labels = rows.map(r => shortLabel(r.month));
       const tooltipLabels = rows.map(r => fmt.cap(fmt.month(r.month)));
       const values = rows.map(r => Math.max(0, r.value));
@@ -81,15 +76,6 @@
         series: [{ name: 'Nettoförmögenhet', color: 'var(--dark)', values }],
       });
 
-      root.querySelector('#nwSnapshot').addEventListener('click', () => {
-        App.update(st => {
-          const month = ym(today());
-          const snap = { month, assets: calc.assets(), liabilities: calc.totalDebt(), netWorth: calc.netWorth() };
-          const i = st.snapshots.findIndex(x => x.month === month);
-          if (i >= 0) st.snapshots[i] = snap; else st.snapshots.push(snap);
-          st.snapshots.sort((a, b) => a.month.localeCompare(b.month));
-        });
-      });
     },
   });
 })();

@@ -16,22 +16,23 @@
 
   function data(s) {
     const keys = monthKeys();
-    const months = keys.map(k => ({ key: k, ...calc.monthTotals(k), savings: sum(calc.txInMonth(k).filter(t => t.type === 'expense' && t.category === 'Sparande').map(t => t.amount)) }));
-    const tx = s.transactions.filter(t => t.date >= `${keys[0]}-01` && t.date <= `${keys[11]}-31`);
+    const months = keys.map(k => ({ key: k, ...calc.monthTotals(k), savings: sum(calc.txInMonth(k).filter(t => t.type === 'expense' && calc.isSaving(t.category)).map(t => t.amount)) }));
+    const from = App.period.range(keys[0]).start, to = App.period.range(keys[11]).end;
+    const tx = s.transactions.filter(t => t.date >= from && t.date <= to);
     const byCat = calc.byCategory(tx);
     const catItems = s.categories.map(c => ({ name: c.name, color: c.color, value: byCat[c.name] || 0 }))
       .concat(Object.keys(byCat).filter(n => !s.categories.some(c => c.name === n)).map(n => ({ name: n, color: '#8b8178', value: byCat[n] })));
     let running = 0;
     const savingsCum = months.map(m => (running += m.savings));
 
-    // Skuldbetalningar per månad (från registrerade betalningar på skulder)
-    const payments = s.debts.flatMap(d => (d.payments || []).map(p => ({ ...p, debt: d.name })));
+    // Skuldbetalningar per månad (transaktioner kopplade till skulder)
+    const payments = s.transactions.filter(t => t.date >= from && t.date <= to && calc.debtOf(t)).map(t => ({ date: t.date, amount: t.amount, debt: calc.debtOf(t).name }));
     const payByMonth = keys.map(k => sum(payments.filter(p => p.date && App.period.keyOf(p.date) === k).map(p => p.amount)));
 
-    const nw = s.snapshots.filter(x => keys.includes(x.month) && x.month < App.period.current());
-    const nwLabels = nw.map(x => label(x.month));
-    const nwValues = nw.map(x => x.netWorth);
-    if (keys.includes(App.period.current())) { nwLabels.push(label(App.period.current())); nwValues.push(calc.netWorth()); }
+    const hist = new Set(calc.historyKeys(24));
+    const nw = calc.netWorthSeries(keys.filter(k => hist.has(k)));
+    const nwLabels = nw.map(x => label(x.key));
+    const nwValues = nw.map(x => x.value);
 
     return { keys, months, tx, catItems, totalSpent: sum(Object.values(byCat)), savingsCum, payments, payByMonth, nwLabels, nwValues };
   }
@@ -84,8 +85,8 @@
         overline: 'Sparande', title: 'Sparandets utveckling',
         right: `<span class="amount rep-head-amount">${fmt.money(calc.totalSaved())}</span>`,
         body: d.savingsCum[d.savingsCum.length - 1] > 0
-          ? `<div class="chart" id="repSavings"></div><p class="muted" style="margin-top:8px">Ackumulerade insättningar i kategorin Sparande under perioden.</p>`
-          : ui.empty('Inget sparande registrerat', 'Utgifter i kategorin Sparande visas här.'),
+          ? `<div class="chart" id="repSavings"></div><p class="muted" style="margin-top:8px">Ackumulerade insättningar i dina sparkategorier under perioden.</p>`
+          : ui.empty('Inget sparande registrerat', 'Utgifter i dina sparkategorier visas här.'),
       });
 
       const position = ui.card({

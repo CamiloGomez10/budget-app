@@ -259,7 +259,11 @@ input:focus-visible, select:focus-visible, textarea:focus-visible, button:focus-
 .dialog { border: 0; border-radius: 16px; padding: 0; width: min(520px, calc(100vw - 32px)); background: var(--card); color: var(--text); box-shadow: 0 20px 60px rgba(0, 0, 0, 0.25); }
 .dialog::backdrop { background: rgba(43, 33, 28, 0.45); }
 .dialog-form { padding: 22px; }
+[hidden] { display: none !important; }
+.link-btn { border: 0; background: none; padding: 0; margin-left: 4px; color: var(--dark); text-decoration: underline; cursor: pointer; font: inherit; font-size: 11.5px; }
 .dialog-actions { display: flex; justify-content: flex-end; gap: 8px; margin-top: 18px; }
+.dialog-actions #txDelete { margin-right: auto; }
+.tx-sign-hint { margin: 10px 0 0; }
 
 /* ---------- Diagram ---------- */
 .chart { position: relative; width: 100%; }

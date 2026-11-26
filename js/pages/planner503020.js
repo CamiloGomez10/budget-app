@@ -15,7 +15,7 @@
 
   function compute(s) {
     const key = App.period.current();
-    const income = calc.monthTotals(key).income;
+    const income = calc.monthTotals(key).income || calc.plannedIncome(key);
     const byCat = calc.byCategory(calc.txInMonth(key));
     const actual = { needs: 0, wants: 0, future: 0 };
     for (const [name, amount] of Object.entries(byCat)) {
@@ -38,7 +38,8 @@
 
     render(s) {
       const key = App.period.current();
-      const income = calc.monthTotals(key).income;
+      const actualIncome = calc.monthTotals(key).income;
+      const income = actualIncome || calc.plannedIncome(key);
       const groups = compute(s);
       const allocated = sum(groups.map(g => g.actual));
       const pctSum = sum(groups.map(g => g.pct));
@@ -58,8 +59,8 @@
         ? ui.note(`<b>Procentsatserna blir ${fmt.num(pctSum)} % tillsammans.</b>Justera dem så att summan blir 100 %.`)
         : '';
       const noIncome = income <= 0
-        ? ui.note('<b>Ingen inkomst registrerad den här månaden.</b>Målen räknas fram från månadens inkomster.')
-        : '';
+        ? ui.note('<b>Ingen inkomst den här månaden.</b>Målen räknas fram från månadens inkomster, eller från den budgeterade inkomsten om inget kommit in än.')
+        : actualIncome <= 0 ? ui.note('<b>Ingen inkomst registrerad än.</b>Målen räknas från den budgeterade inkomsten tills lönen kommer in.') : '';
 
       const cards = `<div class="grid-3">${groups.map(g => `
         <section class="card p5-card">

@@ -1,6 +1,9 @@
-// Lönplanering – fördela varje lön med avsikt.
+// Lönplanering – fördela varje lön med avsikt. Använder samma budget som Månadsbudget:
+// en ändring här ändrar månadens budget, och utfallet räknas från transaktionerna.
 (() => {
   const { fmt, calc, ui, charts, esc, sum, COLORS } = App;
+  let offset = 0; // 0 = innevarande period, -1 = förra, +1 = nästa
+  const keyOf = () => App.addMonths(App.period.current(), offset);
 
   // Korta kategorinamn när diagrammet är smalt så att etiketterna inte krockar
   function shortLabels(el, names) {
@@ -16,22 +19,27 @@
     icon: 'wallet',
 
     render(s) {
-      const p = s.paycheck;
-      const allocated = sum(s.categories.map(c => p.alloc[c.name]));
-      const period = calc.txBetween(p.start, p.end);
-      const totals = calc.totals(period);
-      const left = (Number(p.income) || 0) - allocated;
+      const key = keyOf();
+      const r = App.period.range(key);
+      const plan = calc.planned(key);
+      const income = calc.plannedIncome(key);
+      const allocated = calc.plannedTotal(key);
+      const totals = calc.monthTotals(key);
+      const left = income - allocated;
 
       return `
         ${ui.card({
           overline: 'Per period',
           title: 'Fördela lönen',
           body: `
-            <p class="muted pay-intro">Fördela periodens förväntade inkomst. Faktiska belopp räknas från transaktionerna mellan datumen.</p>
+            <p class="muted pay-intro">Fördela periodens förväntade inkomst. Beloppen är samma som i Månadsbudget, och utfallet räknas från dina transaktioner.</p>
+            <div class="pay-period">
+              <button class="btn btn-small" data-move="-1" aria-label="Förra perioden">←</button>
+              <div><b>${fmt.cap(fmt.month(key))}</b><p class="muted">${fmt.date(r.start)} – ${fmt.date(r.end)}</p></div>
+              <button class="btn btn-small" data-move="1" aria-label="Nästa period">→</button>
+            </div>
             <div class="pay-fields">
-              ${ui.field('Perioden börjar', `<input type="date" class="pay-input" data-key="start" value="${p.start}">`)}
-              ${ui.field('Perioden slutar', `<input type="date" class="pay-input" data-key="end" value="${p.end}">`)}
-              ${ui.field('Förväntad inkomst', ui.moneyInput(`class="pay-input" data-key="income" min="0" value="${Number(p.income) || 0}"`))}
+              ${s.incomeCategories.map(c => ui.field(`Förväntad inkomst: ${esc(c.name)}`, ui.moneyInput(`class="pay-alloc-input" data-cat="${esc(c.name)}" min="0" value="${Number(plan[c.name]) || 0}"`))).join('')}
             </div>
             <div class="pay-summary">
               <div><p class="stat-label">Fördelat</p><p class="strip-value">${fmt.money(allocated)}</p></div>
@@ -46,7 +54,7 @@
             title: 'Per kategori',
             body: `<div class="pay-alloc">
               ${s.categories.map(c => ui.field(`<span class="swatch" style="background:${c.color}"></span> ${esc(c.name)}`,
-                ui.moneyInput(`class="pay-alloc-input" data-cat="${esc(c.name)}" min="0" value="${Number(p.alloc[c.name]) || 0}"`))).join('')}
+                ui.moneyInput(`class="pay-alloc-input" data-cat="${esc(c.name)}" min="0" value="${Number(plan[c.name]) || 0}"`))).join('')}
             </div>`,
           })}
           ${ui.card({
@@ -59,8 +67,9 @@
     },
 
     mount(root, s) {
-      const p = s.paycheck;
-      const actual = calc.byCategory(calc.txBetween(p.start, p.end));
+      const key = keyOf();
+      const plan = calc.planned(key);
+      const actual = calc.byCategory(calc.txInMonth(key));
       charts.bars(root.querySelector('#payChart'), {
         label: 'Fördelat och faktiskt per kategori',
         labels: shortLabels(root.querySelector('#payChart'), s.categories.map(c => c.name)),
@@ -68,20 +77,20 @@
         wide: true,
         height: 260,
         series: [
-          { name: 'Planerat', color: COLORS.planned, values: s.categories.map(c => Number(p.alloc[c.name]) || 0) },
+          { name: 'Planerat', color: COLORS.planned, values: s.categories.map(c => Number(plan[c.name]) || 0) },
           { name: 'Faktiskt', color: COLORS.actual, values: s.categories.map(c => actual[c.name] || 0) },
         ],
       });
 
-      root.querySelectorAll('.pay-input').forEach(input => {
-        input.addEventListener('change', () => {
-          const k = input.dataset.key;
-          App.update(st => { st.paycheck[k] = k === 'income' ? Math.max(0, Number(input.value) || 0) : input.value; });
-        });
-      });
+      root.querySelectorAll('[data-move]').forEach(b => b.addEventListener('click', () => { offset += Number(b.dataset.move); App.render(); }));
+      // Samma budget som Månadsbudget: första ändringen kopierar standardbudgeten till perioden
       root.querySelectorAll('.pay-alloc-input').forEach(input => {
         input.addEventListener('change', () => {
-          App.update(st => { st.paycheck.alloc[input.dataset.cat] = Math.max(0, Number(input.value) || 0); });
+          const value = Math.max(0, Number(input.value) || 0);
+          App.update(st => {
+            if (!st.budgets[key]) st.budgets[key] = { ...calc.planned(key) };
+            st.budgets[key][input.dataset.cat] = value;
+          });
         });
       });
     },

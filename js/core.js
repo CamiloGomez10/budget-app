@@ -91,13 +91,20 @@ const App = (() => {
       incomeCategories: DEFAULT_INCOME.map(c => ({ ...c })),  // underkategorier för inkomster
       defaultBudget: {},           // { Boende: 8500, ... } används när en månad saknar egen plan
       budgets: {},                 // { "2026-11": { Boende: 8500, ... } }
-      transactions: [],            // { id, date, type: income|expense, category, title, account, amount, recurring }
-      accounts: [],                // { id, name, type: checking|savings|investment, balance }
-      bills: [],                   // { id, name, amount, dueDate, recurrence: monthly|yearly|once, debtId?, paid: { "2026-11": true } }
-      goals: [],                   // { id, name, target, current, date, accountId, notes, history: [{ date, amount, note }] }
-      debts: [],                   // { id, name, original, balance, apr, installment, extra, payDay, start, end, notes, payments: [{ date, amount, kind }] }
-      snapshots: [],               // { month: "2026-01", assets, liabilities, netWorth }
-      noSpend: {},                 // { "2026-11-03": true }
+      // type transfer = flytt mellan egna konton (toAccountId), räknas inte i budgeten.
+      // goalId/debtId kopplar till sparmål/skuld, billId + billMonth till en betald räkning.
+      transactions: [],            // { id, date, type: income|expense|transfer, category, title, accountId, toAccountId, goalId, debtId, billId, billMonth, amount, recurring }
+      // Saldot räknas fram: startBalance + transaktioner. categories = sparkategorier vars
+      // utgifter hamnar på kontot (pengarna flyttas dit från kontot transaktionen gjordes på).
+      accounts: [],                // { id, name, type: checking|savings|investment, startBalance, categories: [], archived, reconciled }
+      // Räkningar räknas som betalda när det finns en transaktion för dem (billId + billMonth).
+      bills: [],                   // { id, name, amount, dueDate, recurrence: monthly|yearly|once, category, accountId, debtId?, goalId? }
+      // Sparat = startAmount + kopplade transaktioner (goalId, eller en kategori i categories).
+      goals: [],                   // { id, name, target, startAmount, categories: [], date, accountId, notes }
+      // Saldo = original + adjust − kopplade transaktioner (debtId, eller en kategori i categories).
+      debts: [],                   // { id, name, original, adjust, categories: [], apr, installment, extra, payDay, start, end, notes }
+      snapshots: [],               // används inte längre (historiken räknas fram), finns kvar för gammal data
+      noSpend: {},                 // manuella ändringar av köpfria dagar: { "2026-11-03": true|false }
       paycheck: { start: iso(new Date(now.getFullYear(), now.getMonth(), 1)), end: iso(new Date(now.getFullYear(), now.getMonth() + 1, 0)), income: 0, alloc: {} },
       forecast: { start: 10000, monthly: 1500, years: 10, rate: 5 },
       strategy: 'snowball',
@@ -135,6 +142,36 @@ const App = (() => {
       const names = [...new Set((s.transactions || []).filter(t => t.type === 'income').map(t => t.category).filter(Boolean))];
       out.incomeCategories = (names.length ? names : DEFAULT_INCOME.map(c => c.name)).map(name => ({ name }));
     }
+    // Konton: det gamla manuella saldot ersätts av ett startsaldo (0 = saldot när budgeten började)
+    out.accounts = (out.accounts || []).map(a => {
+      const { balance, ...rest } = a;
+      return { startBalance: 0, categories: [], archived: false, ...rest };
+    });
+    // Transaktioner pekar på kontots id i stället för namnet (tål namnbyten)
+    out.transactions = (out.transactions || []).map(t => {
+      if (t.accountId !== undefined) return t;
+      const { account, ...rest } = t;
+      const acc = out.accounts.find(a => a.name === account);
+      return { ...rest, accountId: acc ? acc.id : '' };
+    });
+    // Sparmål: det gamla manuella beloppet blir startbelopp, transaktioner fyller på
+    out.goals = (out.goals || []).map(g => {
+      if (g.startAmount !== undefined) return g;
+      const { current, history, ...rest } = g;
+      return { categories: [], ...rest, startAmount: Number(current) || 0 };
+    });
+    // Skulder: det gamla saldot blir startskuld, kopplade transaktioner betalar av
+    out.debts = (out.debts || []).map(d => {
+      if (d.adjust !== undefined) return d;
+      const { balance, payments, ...rest } = d;
+      return { categories: [], ...rest, original: Number(balance) || 0, adjust: 0 };
+    });
+    // Räkningar: avbockningar ersätts av transaktioner
+    out.bills = (out.bills || []).map(b => {
+      if (!('paid' in b)) return b;
+      const { paid, ...rest } = b;
+      return { category: '', accountId: '', ...rest };
+    });
     return out;
   }
 
@@ -205,20 +242,21 @@ const App = (() => {
     const rand = () => (seed = (seed * 16807) % 2147483647) / 2147483647;
 
     s.accounts = [
-      { id: uid(), name: 'Lönekonto', type: 'checking', balance: 31000 },
-      { id: uid(), name: 'Sparkonto med ränta', type: 'savings', balance: 90000 },
-      { id: uid(), name: 'Investeringskonto', type: 'investment', balance: 42000 },
+      { id: uid(), name: 'Lönekonto', type: 'checking', startBalance: 4000, categories: [], archived: false },
+      { id: uid(), name: 'Sparkonto med ränta', type: 'savings', startBalance: 60000, categories: ['Sparande'], archived: false },
+      { id: uid(), name: 'Investeringskonto', type: 'investment', startBalance: 42000, categories: [], archived: false },
     ];
-    const checking = s.accounts[0].name;
+    const checking = s.accounts[0].id;
+    s.settings.defaultAccountId = checking;
 
     s.defaultBudget = { Lön: 42100, Boende: 8500, Mat: 3500, Transport: 1800, Livsstil: 2800, Hälsa: 1200, Utbildning: 500, Sparande: 4500, Skulder: 2675 };
     for (let m = 0; m < 12; m++) s.budgets[`${Y}-${pad2(m + 1)}`] = { ...s.defaultBudget };
 
     const tx = [];
-    const add = (m, d, type, category, title, amount, recurring = false) => {
+    const add = (m, d, type, category, title, amount, recurring = false, extra = {}) => {
       const date = new Date(Y, m, d);
       if (date > now) return;
-      tx.push({ id: uid(), date: iso(date), type, category, title, account: checking, amount: Math.round(amount), recurring });
+      tx.push({ id: uid(), date: iso(date), type, category, title, accountId: checking, amount: Math.round(amount), recurring, ...extra });
     };
     for (let m = 0; m <= curM; m++) {
       add(m, 10, 'income', 'Lön', 'Ateljé Norr AB', 21050, true);
@@ -233,39 +271,28 @@ const App = (() => {
       add(m, 19, 'expense', 'Livsstil', 'Kläder', 300 + rand() * 900);
       add(m, 14, 'expense', 'Hälsa', 'Gym', 425, true);
       if (m % 3 === 0) add(m, 22, 'expense', 'Utbildning', 'Kursbok', 350);
-      add(m, 24, 'expense', 'Skulder', 'Reskort avbetalning', 625, true);
-      add(m, 28, 'expense', 'Skulder', 'CSN', 2050, true);
+      add(m, 24, 'expense', 'Skulder', 'Reskort avbetalning', 625, true, { debtId: 'demo-travel' });
+      add(m, 28, 'expense', 'Skulder', 'CSN', 2050, true, { debtId: 'demo-student' });
       add(m, 26, 'expense', 'Sparande', 'Överföring till buffert', 3000, true);
     }
     s.transactions = tx.sort((a, b) => b.date.localeCompare(a.date));
 
-    const debtTravel = { id: uid(), name: 'Reskort', original: 7750, balance: 6200, apr: 19.99, installment: 625, extra: 0, payDay: 24, start: `${Y}-01-01`, end: '', notes: '', payments: [] };
-    const debtStudent = { id: uid(), name: 'Studielån', original: 80000, balance: 64000, apr: 4.25, installment: 2050, extra: 0, payDay: 28, start: `${Y - 2}-09-01`, end: '', notes: '', payments: [] };
+    const debtTravel = { id: 'demo-travel', name: 'Reskort', original: 9000, adjust: 0, categories: [], apr: 19.99, installment: 625, extra: 0, payDay: 24, start: `${Y}-01-01`, end: '', notes: '' };
+    const debtStudent = { id: 'demo-student', name: 'Studielån', original: 86000, adjust: 0, categories: [], apr: 4.25, installment: 2050, extra: 0, payDay: 28, start: `${Y - 2}-09-01`, end: '', notes: '' };
     s.debts = [debtTravel, debtStudent];
 
     const mk = ym(now);
     s.bills = [
-      { id: uid(), name: 'Hyra', amount: 7500, dueDate: `${mk}-03`, recurrence: 'monthly', paid: {} },
-      { id: uid(), name: 'Streamingtjänst', amount: 119, dueDate: `${mk}-17`, recurrence: 'monthly', paid: {} },
-      { id: uid(), name: 'Reskort', amount: 625, dueDate: `${mk}-24`, recurrence: 'monthly', debtId: debtTravel.id, paid: {} },
-      { id: uid(), name: 'Studielån', amount: 2050, dueDate: `${mk}-28`, recurrence: 'monthly', debtId: debtStudent.id, paid: {} },
+      { id: uid(), name: 'Hyra', amount: 7500, dueDate: `${mk}-01`, recurrence: 'monthly', category: 'Boende', accountId: checking },
+      { id: uid(), name: 'Streamingtjänst', amount: 119, dueDate: `${mk}-17`, recurrence: 'monthly', category: 'Livsstil', accountId: checking },
+      { id: uid(), name: 'Reskort', amount: 625, dueDate: `${mk}-24`, recurrence: 'monthly', category: 'Skulder', accountId: checking, debtId: debtTravel.id },
+      { id: uid(), name: 'Studielån', amount: 2050, dueDate: `${mk}-28`, recurrence: 'monthly', category: 'Skulder', accountId: checking, debtId: debtStudent.id },
     ];
 
     s.goals = [
-      { id: uid(), name: 'Buffert', target: 120000, current: 91000, date: `${Y + 1}-03-01`, accountId: s.accounts[1].id, notes: '', history: [] },
-      { id: uid(), name: 'Resa till Portugal', target: 27500, current: 16000, date: `${Y + 1}-04-01`, accountId: '', notes: '', history: [] },
+      { id: uid(), name: 'Buffert', target: 120000, startAmount: 60000, categories: ['Sparande'], date: `${Y + 1}-03-01`, accountId: s.accounts[1].id, notes: '' },
+      { id: uid(), name: 'Resa till Portugal', target: 27500, startAmount: 16000, categories: [], date: `${Y + 1}-04-01`, accountId: '', notes: '' },
     ];
-
-    // Nettoförmögenhet som växer stadigt fram till förra månaden
-    const assets = sum(s.accounts.map(a => a.balance));
-    const liab = sum(s.debts.map(d => d.balance));
-    for (let m = 0; m < curM; m++) {
-      const nw = Math.round((assets - liab) * (0.35 + 0.65 * (m / Math.max(1, curM))));
-      s.snapshots.push({ month: `${Y}-${pad2(m + 1)}`, assets: nw + liab, liabilities: liab, netWorth: nw });
-    }
-
-    // Några köpfria dagar denna månad
-    for (let d = 1; d < now.getDate(); d++) if (rand() > 0.7) s.noSpend[`${mk}-${pad2(d)}`] = true;
 
     s.paycheck = { start: `${mk}-01`, end: `${mk}-${pad2(daysInMonth(mk))}`, income: 42100, alloc: { ...s.defaultBudget } };
     s.forecast = { start: 10000, monthly: 1500, years: 10, rate: 5 };
@@ -411,12 +438,129 @@ const App = (() => {
       });
     },
 
-    assets: () => sum(state.accounts.filter(a => a.balance > 0).map(a => a.balance)),
-    liquid: () => sum(state.accounts.filter(a => a.type !== 'investment' && a.balance > 0).map(a => a.balance)),
-    negativeAccounts: () => -sum(state.accounts.filter(a => a.balance < 0).map(a => a.balance)),
-    totalDebt: () => sum(state.debts.map(d => d.balance)) + calc.negativeAccounts(),
+    // ---------- Konton ----------
+    // Standardkontot: transaktioner utan konto räknas hit.
+    defaultAccount() {
+      const active = state.accounts.filter(a => !a.archived);
+      return active.find(a => a.id === state.settings.defaultAccountId)
+        || active.find(a => a.type === 'checking') || active[0] || null;
+    },
+    // Kontot en sparkategori är kopplad till (eller null)
+    accountForCategory: name => state.accounts.find(a => (a.categories || []).includes(name)) || null,
+
+    /**
+     * Hur en transaktion påverkar kontona: [{ accountId, amount }].
+     * Inkomst: + på kontot. Utgift: − på kontot. Utgift i en sparkategori som är kopplad
+     * till ett konto: pengarna flyttas dit (negativt belopp = uttag, flyttas tillbaka).
+     */
+    txMoves(t) {
+      const def = calc.defaultAccount();
+      const from = (t.accountId && state.accounts.some(a => a.id === t.accountId)) ? t.accountId : (def ? def.id : '');
+      if (t.type === 'income') return from ? [{ accountId: from, amount: t.amount }] : [];
+      if (t.type === 'transfer') {
+        const to = state.accounts.some(a => a.id === t.toAccountId) ? t.toAccountId : '';
+        return [from && { accountId: from, amount: -t.amount }, to && to !== from && { accountId: to, amount: t.amount }].filter(Boolean);
+      }
+      const target = calc.accountForCategory(t.category);
+      if (target) {
+        // Lagd direkt på sparkontot: pengarna kommer från standardkontot
+        const source = from === target.id ? (def && def.id !== target.id ? def.id : '') : from;
+        return [source && { accountId: source, amount: -t.amount }, { accountId: target.id, amount: t.amount }].filter(Boolean);
+      }
+      return from ? [{ accountId: from, amount: -t.amount }] : [];
+    },
+
+    // { kontoId: saldo } för alla konton, eventuellt bara med transaktioner t.o.m. ett datum
+    balances(until = '') {
+      const out = {};
+      state.accounts.forEach(a => { out[a.id] = Number(a.startBalance) || 0; });
+      for (const t of state.transactions) {
+        if (until && t.date > until) continue;
+        for (const m of calc.txMoves(t)) if (m.accountId in out) out[m.accountId] += m.amount;
+      }
+      Object.keys(out).forEach(k => { out[k] = Math.round(out[k] * 100) / 100; });
+      return out;
+    },
+    // Aktiva konton med uträknat saldo
+    accounts() {
+      const b = calc.balances();
+      return state.accounts.filter(a => !a.archived).map(a => ({ ...a, balance: b[a.id] || 0 }));
+    },
+    // Transaktioner som rör ett konto, nyast först, med beloppet för just det kontot
+    accountTx(id) {
+      return state.transactions
+        .map(t => ({ t, amount: sum(calc.txMoves(t).filter(m => m.accountId === id).map(m => m.amount)) }))
+        .filter(x => calc.txMoves(x.t).some(m => m.accountId === id))
+        .sort((a, b) => b.t.date.localeCompare(a.t.date));
+    },
+    accountName: id => (state.accounts.find(a => a.id === id) || {}).name || '',
+
+    assets: () => sum(calc.accounts().filter(a => a.balance > 0).map(a => a.balance)),
+    liquid: () => sum(calc.accounts().filter(a => a.type !== 'investment' && a.balance > 0).map(a => a.balance)),
+    negativeAccounts: () => -sum(calc.accounts().filter(a => a.balance < 0).map(a => a.balance)),
+    // ---------- Sparmål och skulder ----------
+    // Vilket sparmål / vilken skuld en transaktion hör till: uttryckligen, annars via kategorin
+    goalOf(t) {
+      if (t.goalId) return state.goals.find(g => g.id === t.goalId) || null;
+      if (t.type === 'transfer' || t.goalId === null) return null;
+      return state.goals.find(g => (g.categories || []).includes(t.category)) || null;
+    },
+    debtOf(t) {
+      if (t.debtId) return state.debts.find(d => d.id === t.debtId) || null;
+      if (t.type !== 'expense' || t.debtId === null) return null;
+      return state.debts.find(d => (d.categories || []).includes(t.category)) || null;
+    },
+    goalTx: id => state.transactions.filter(t => calc.goalOf(t)?.id === id).sort((a, b) => b.date.localeCompare(a.date)),
+    debtTx: id => state.transactions.filter(t => calc.debtOf(t)?.id === id).sort((a, b) => b.date.localeCompare(a.date)),
+    // Sparmål med uträknat belopp (current)
+    goals() {
+      const add = {};
+      for (const t of state.transactions) { const g = calc.goalOf(t); if (g) add[g.id] = (add[g.id] || 0) + t.amount; }
+      return state.goals.map(g => ({ ...g, current: Math.round(((Number(g.startAmount) || 0) + (add[g.id] || 0)) * 100) / 100 }));
+    },
+    // Skulder med uträknat saldo (balance) och betalt (paid)
+    debts() {
+      const paid = {};
+      for (const t of state.transactions) { const d = calc.debtOf(t); if (d) paid[d.id] = (paid[d.id] || 0) + t.amount; }
+      return state.debts.map(d => {
+        const p = Math.round((paid[d.id] || 0) * 100) / 100;
+        return { ...d, paid: p, balance: Math.max(0, Math.round(((Number(d.original) || 0) + (Number(d.adjust) || 0) - p) * 100) / 100) };
+      });
+    },
+
+    // Skulder som de såg ut ett visst datum (bara betalningar t.o.m. datumet räknas)
+    debtsAt(until) {
+      const paid = {};
+      for (const t of state.transactions) { if (t.date > until) continue; const d = calc.debtOf(t); if (d) paid[d.id] = (paid[d.id] || 0) + t.amount; }
+      return sum(state.debts.map(d => Math.max(0, (Number(d.original) || 0) + (Number(d.adjust) || 0) - (paid[d.id] || 0))));
+    },
+    // Nettoförmögenhet ett visst datum, räknad från konton och skulder
+    netWorthAt(until) {
+      const b = calc.balances(until);
+      const vals = state.accounts.filter(a => !a.archived).map(a => b[a.id] || 0);
+      return sum(vals) - calc.debtsAt(until);
+    },
+    // [{ key, value }] för budgetperioderna, värdet vid periodens slut (idag för innevarande)
+    netWorthSeries(keys) {
+      const now = iso(today());
+      return keys.map(k => { const end = period.range(k).end; return { key: k, value: Math.round(calc.netWorthAt(end < now ? end : now)) }; });
+    },
+    // Perioder från första transaktionen (max n st) fram till nu
+    historyKeys(n = 12) {
+      const cur = period.current();
+      const first = state.transactions.reduce((m, t) => (t.date < m ? t.date : m), iso(today()));
+      const keys = [];
+      for (let k = period.keyOf(first); k <= cur; k = addMonths(k, 1)) keys.push(k);
+      return keys.slice(-n);
+    },
+    // Är en utgiftskategori sparande? (grupp Framtid, eller kopplad till sparkonto/sparmål)
+    isSaving: name => !!(state.categories.find(c => c.name === name)?.group === 'future'
+      || calc.accountForCategory(name) || state.goals.some(g => (g.categories || []).includes(name)))
+      && !state.debts.some(d => (d.categories || []).includes(name)),
+
+    totalDebt: () => sum(calc.debts().map(d => d.balance)) + calc.negativeAccounts(),
     netWorth: () => calc.assets() - calc.totalDebt(),
-    totalSaved: () => sum(state.goals.map(g => g.current)),
+    totalSaved: () => sum(calc.goals().map(g => g.current)),
 
     // Räkningar som infaller en viss månad, med datum och betalstatus
     billsForMonth(key) {
@@ -427,8 +571,19 @@ const App = (() => {
         if (b.recurrence === 'yearly' && Number(key.slice(5)) !== due.getMonth() + 1) return [];
         if (dueKey > key && b.recurrence !== 'once') return [];
         const day = Math.min(due.getDate(), daysInMonth(key));
-        return [{ ...b, date: `${key}-${pad2(day)}`, isPaid: !!(b.paid && b.paid[key]) }];
+        const tx = calc.billTx(b, key);
+        return [{ ...b, date: `${key}-${pad2(day)}`, isPaid: !!tx, tx }];
       }).sort((a, b) => a.date.localeCompare(b.date));
+    },
+
+    // Transaktionen som betalade räkningen en viss månad: kopplad direkt, eller en utgift
+    // i samma kategori, samma kalendermånad och med samma belopp som inte hör till en annan räkning.
+    billTx(b, key) {
+      const linked = state.transactions.find(t => t.billId === b.id && t.billMonth === key);
+      if (linked) return linked;
+      if (!b.category) return null;
+      return state.transactions.find(t => !t.billId && t.type === 'expense' && t.category === b.category
+        && t.date.slice(0, 7) === key && Math.abs(t.amount - b.amount) < 0.5) || null;
     },
 
     // Räkningar med förfallodag mellan två datum (ISO), över flera kalendermånader
@@ -721,58 +876,120 @@ const App = (() => {
   }
 
   // ---------- Dialog: lägg till transaktion ----------
+  // preset kan innehålla en befintlig transaktion (id) → redigering.
+  // goalId/debtId: undefined = följ kategorin, null = uttryckligen ingen, id = kopplad.
   function openTransactionDialog(preset = {}) {
     const dlg = document.getElementById('dialog');
-    const t = { type: 'expense', date: iso(today()), category: state.categories[0]?.name || '', title: '', account: state.accounts[0]?.name || '', amount: '', recurring: false, ...preset };
+    const editing = !!(preset.id && state.transactions.some(x => x.id === preset.id));
+    const t = { type: 'expense', date: iso(today()), category: state.categories[0]?.name || '', title: '', accountId: calc.defaultAccount()?.id || '', toAccountId: '', amount: '', recurring: false, ...preset };
+    const activeAccounts = state.accounts.filter(a => !a.archived || a.id === t.accountId || a.id === t.toAccountId);
+    const accOpts = (sel, none) => `${none ? `<option value="">${none}</option>` : ''}${activeAccounts.map(a => `<option value="${a.id}" ${a.id === sel ? 'selected' : ''}>${esc(a.name)}</option>`).join('')}`;
+    const goal0 = calc.goalOf(t), debt0 = calc.debtOf(t);
+    const goals = state.goals, debts = state.debts;
+
     dlg.innerHTML = `
       <form method="dialog" class="dialog-form" id="txForm">
-        <p class="overline">Ny post</p>
-        <h2 class="card-title">Lägg till transaktion</h2>
+        <p class="overline">${editing ? 'Ändra post' : 'Ny post'}</p>
+        <h2 class="card-title">${editing ? 'Redigera transaktion' : 'Lägg till transaktion'}</h2>
         <div class="seg-control" role="radiogroup">
           <label><input type="radio" name="type" value="expense" ${t.type === 'expense' ? 'checked' : ''}><span>Utgift</span></label>
           <label><input type="radio" name="type" value="income" ${t.type === 'income' ? 'checked' : ''}><span>Inkomst</span></label>
+          ${state.accounts.length > 1 ? `<label><input type="radio" name="type" value="transfer" ${t.type === 'transfer' ? 'checked' : ''}><span>Överföring</span></label>` : ''}
         </div>
         <div class="form-grid">
-          ${ui.field('Belopp', ui.moneyInput(`name="amount" required min="0" value="${esc(t.amount)}"`))}
+          ${ui.field('Belopp', ui.moneyInput(`name="amount" required step="any" value="${esc(t.amount)}"`))}
           ${ui.field('Datum', `<input type="date" name="date" required value="${t.date}">`)}
-          ${ui.field('Kategori', `<select name="category" id="txCategory"></select>`)}
+          ${ui.field('Kategori', `<select name="category" id="txCategory"></select>`, 'tx-f-cat')}
           ${ui.field('Beskrivning', `<input name="title" placeholder="t.ex. ICA eller arbetsgivare" value="${esc(t.title)}">`)}
-          ${ui.field('Konto', `<select name="account"><option value="">Inget konto</option>${state.accounts.map(a => `<option ${a.name === t.account ? 'selected' : ''}>${esc(a.name)}</option>`).join('')}</select>`)}
-          <label class="check"><input type="checkbox" name="recurring" ${t.recurring ? 'checked' : ''}> Återkommande</label>
+          ${ui.field('<span id="txAccLabel">Konto</span>', `<select name="accountId">${accOpts(t.accountId, activeAccounts.length ? '' : 'Inget konto')}</select>`)}
+          ${ui.field('Till konto', `<select name="toAccountId">${accOpts(t.toAccountId, 'Välj konto')}</select>`, 'tx-f-to')}
+          ${goals.length ? ui.field('Sparmål', `<select name="goalId" id="txGoal"><option value="">Inget</option>${goals.map(g => `<option value="${g.id}" ${goal0?.id === g.id ? 'selected' : ''}>${esc(g.name)}</option>`).join('')}</select>`, 'tx-f-goal') : ''}
+          ${debts.length ? ui.field('Skuld', `<select name="debtId" id="txDebt"><option value="">Ingen</option>${debts.map(d => `<option value="${d.id}" ${debt0?.id === d.id ? 'selected' : ''}>${esc(d.name)}</option>`).join('')}</select>`, 'tx-f-debt') : ''}
+          <p class="muted tx-move-hint" id="txMoveHint"></p>
+          <label class="check tx-f-rec"><input type="checkbox" name="recurring" ${t.recurring ? 'checked' : ''}> Återkommande</label>
         </div>
+        <p class="muted tx-sign-hint">Ett negativt belopp betyder pengar tillbaka, t.ex. ett uttag från sparandet eller en retur.</p>
         <div class="dialog-actions">
+          ${editing ? '<button type="button" class="btn btn-danger" id="txDelete">Ta bort</button>' : ''}
           <button type="button" class="btn btn-secondary" value="cancel" id="txCancel">Avbryt</button>
           <button type="submit" class="btn btn-primary">Spara</button>
         </div>
       </form>`;
     const form = dlg.querySelector('#txForm');
+    const $ = sel => form.querySelector(sel);
+    const catSelect = $('#txCategory');
+    const typeOf = () => form.querySelector('[name=type]:checked').value;
+    const show = (cls, on) => { const el = form.querySelector('.' + cls); if (el) el.hidden = !on; };
+
     // Kategorilistan följer vald typ: inkomstkategorier eller utgiftskategorier
-    const catSelect = form.querySelector('#txCategory');
     const fillCategories = () => {
-      const isIncome = form.querySelector('[name=type]:checked').value === 'income';
-      catSelect.innerHTML = isIncome ? ui.incomeOptions(t.category) : ui.categoryOptions(t.category);
+      catSelect.innerHTML = typeOf() === 'income' ? ui.incomeOptions(t.category) : ui.categoryOptions(t.category);
     };
-    form.querySelectorAll('[name=type]').forEach(r => r.addEventListener('change', fillCategories));
+    // När kategorin byts: föreslå sparmålet/skulden som kategorin är kopplad till
+    const suggestLinks = () => {
+      const probe = { type: typeOf(), category: catSelect.value };
+      const g = calc.goalOf(probe), d = calc.debtOf(probe);
+      if ($('#txGoal')) $('#txGoal').value = g ? g.id : '';
+      if ($('#txDebt')) $('#txDebt').value = d ? d.id : '';
+    };
+    const refresh = () => {
+      const type = typeOf();
+      show('tx-f-cat', type !== 'transfer');
+      show('tx-f-to', type === 'transfer');
+      show('tx-f-debt', type === 'expense');
+      show('tx-f-rec', type !== 'transfer');
+      $('#txAccLabel').textContent = type === 'transfer' ? 'Från konto' : 'Konto';
+      const target = type === 'expense' && calc.accountForCategory(catSelect.value);
+      const hint = $('#txMoveHint');
+      hint.textContent = type === 'transfer' ? 'En överföring flyttar pengar mellan dina konton och räknas inte i budgeten.'
+        : target ? `Pengarna flyttas till ${target.name}.` : '';
+      hint.hidden = !hint.textContent;
+    };
+    form.querySelectorAll('[name=type]').forEach(r => r.addEventListener('change', () => { fillCategories(); suggestLinks(); refresh(); }));
+    catSelect.addEventListener('change', () => { suggestLinks(); refresh(); });
     fillCategories();
-    dlg.querySelector('#txCancel').addEventListener('click', () => dlg.close());
+    refresh();
+
+    $('#txCancel').addEventListener('click', () => dlg.close());
+    if (editing) $('#txDelete').addEventListener('click', () => {
+      if (!confirmDialog('Ta bort transaktionen?')) return;
+      update(s => { s.transactions = s.transactions.filter(x => x.id !== t.id); });
+      dlg.close();
+    });
     form.addEventListener('submit', e => {
       e.preventDefault();
       const f = new FormData(form);
-      const amount = Math.abs(Number(f.get('amount')));
-      if (!amount) return;
       const type = f.get('type');
+      let amount = Number(f.get('amount'));
+      if (!amount) return;
+      if (type === 'transfer') {
+        amount = Math.abs(amount);
+        if (!f.get('toAccountId') || f.get('toAccountId') === f.get('accountId')) { $('[name=toAccountId]').focus(); return; }
+      }
+      // Kopplingar: spara uttryckligt val bara när det skiljer sig från kategorins förslag
+      const probe = { type, category: f.get('category') };
+      const pick = (val, auto) => val ? (auto && auto.id === val && !t.goalId && !t.debtId ? undefined : val) : (auto ? null : undefined);
+      const goalId = f.has('goalId') ? pick(f.get('goalId'), calc.goalOf(probe)) : undefined;
+      const debtId = type === 'expense' && f.has('debtId') ? pick(f.get('debtId'), calc.debtOf(probe)) : undefined;
+      const tx = {
+        id: editing ? t.id : uid(), date: f.get('date'), type,
+        category: type === 'transfer' ? 'Överföring' : f.get('category'),
+        title: f.get('title').trim(), accountId: f.get('accountId') || '', amount,
+        recurring: type !== 'transfer' && f.get('recurring') === 'on',
+      };
+      if (type === 'transfer') tx.toAccountId = f.get('toAccountId');
+      if (goalId !== undefined) tx.goalId = goalId;
+      if (debtId !== undefined) tx.debtId = debtId;
+      if (t.billId) { tx.billId = t.billId; tx.billMonth = t.billMonth; }
       update(s => {
-        s.transactions.unshift({
-          id: uid(), date: f.get('date'), type,
-          category: f.get('category'),
-          title: f.get('title').trim(), account: f.get('account'), amount, recurring: f.get('recurring') === 'on',
-        });
+        s.transactions = s.transactions.filter(x => x.id !== tx.id);
+        s.transactions.unshift(tx);
         s.transactions.sort((a, b) => b.date.localeCompare(a.date));
       });
       dlg.close();
     });
     dlg.showModal();
-    form.querySelector('[name=amount]').focus();
+    $('[name=amount]').focus();
   }
 
   function confirmDialog(message) {
