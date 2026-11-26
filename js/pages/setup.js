@@ -211,32 +211,18 @@
           </div>`,
       });
 
-      // Delade kostnader: vem du delar med. Vilka kategorier som delas bockas i på kategorin.
-      const sharing = s.settings.sharing || {};
-      const partner = App.calc.partnerName();
-      const sharedList = (sharing.categories || []).filter(n => s.categories.some(c => c.name === n));
-      const shareCard = ui.card({
-        overline: 'Delade kostnader', title: `Det du delar med ${esc(partner)}`,
-        body: `<p class="muted set-gap">Tryck på en kategori ovan och bocka i <b>Delas med ${esc(partner)}</b>. Ni betalar var och en er egen del: i Budget och när du lägger in en utgift skriver du hela beloppet, det delas 50/50 och du kan justera. Bara din del räknas i budgeten och dras från ditt konto.</p>
-          ${ui.field('Delar med', `<input id="sharePartner" maxlength="30" value="${esc(sharing.partner || '')}" placeholder="Sambo">`)}
-          <p class="set-gap">${sharedList.length ? `Delas nu: <b>${sharedList.map(esc).join(', ')}</b>` : '<span class="muted">Inga delade kategorier än.</span>'}</p>`,
-      });
-
       const backup = ui.card({
         overline: 'Säkerhetskopia', title: 'Ladda ner din data',
         body: `<p class="set-text">Allt sparas automatiskt, men vill du ha en egen kopia ifall att kan du ladda ner all data som en fil.</p>
           <button class="btn btn-secondary" id="setBackup">${ui.icon('down', 14)} Ladda ner säkerhetskopia</button>`,
       });
 
-      return `<div class="grid-2">${foundation}${parentsCard}</div>${categories}${shareCard}${backup}`;
+      return `<div class="grid-2">${foundation}${parentsCard}</div>${categories}${backup}`;
     },
 
     mount(root) {
       saved = false;
 
-      // Delade kostnader
-      const setSharing = fn => App.update(st => { st.settings.sharing = st.settings.sharing || {}; fn(st.settings.sharing); });
-      root.querySelector('#sharePartner').addEventListener('change', e => setSharing(sh => { sh.partner = e.target.value.trim(); }));
       root.querySelector('#setBackup').addEventListener('click', () => {
         const payload = { app: 'budget', exportedAt: new Date().toISOString(), mode: App.mode, data: App.state };
         const blob = new Blob([JSON.stringify(payload, null, 2)], { type: 'application/json' });
@@ -305,10 +291,10 @@
             ${ui.field('Huvudkategori', `<select name="parent">${parentOptions(s, c.parent)}</select>`)}
             ${ui.field('Grupp (50/30/20)', `<select name="group">${opt(GROUPS, c.group)}</select>`)}
             <div class="set-checks">
-              <label class="check"><input type="checkbox" name="shared" ${App.calc.isShared(name) ? 'checked' : ''}> Delas med ${esc(App.calc.partnerName())}</label>
+              <label class="check"><input type="checkbox" name="shared" ${App.calc.isShared(name) ? 'checked' : ''}> Delad kostnad</label>
               <label class="check"><input type="checkbox" name="debt" ${c.debt ? 'checked' : ''}> Skuldbetalning (t.ex. Klarna, Walley, lån)</label>
             </div>
-            <p class="muted">Delad: du skriver in hela beloppet och appen delar det 50/50 (du kan justera), bara din del räknas. Skuldbetalningar kan kopplas till en skuld under Mål › Skulder. Byter du namn uppdateras alla transaktioner, budgetar och kopplingar.</p>`}
+            <p class="muted">Delad kostnad: i Budget och på räkningar skriver du hela beloppet, det delas 50/50 och du kan justera. Bara din del räknas. Skuldbetalningar kan kopplas till en skuld under Mål › Skulder. Byter du namn uppdateras alla transaktioner, budgetar och kopplingar.</p>`}
             <p class="set-error" id="catEditError" role="alert"></p>`,
           onSubmit(f) {
             const next = String(f.get('name')).trim();
