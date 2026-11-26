@@ -84,6 +84,14 @@
 .set-remove { padding: 3px; }
 .set-add { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 10px; align-items: end; }
 .set-add .btn { grid-column: 1 / -1; }
+.set-move-list { max-height: 320px; overflow-y: auto; border: 1px solid var(--card-border); border-radius: 10px; padding: 0 12px; margin: 6px 0 12px; }
+.set-move-list > li { gap: 10px; padding: 4px 0; font-size: 13px; }
+.set-move-list .check { flex: 1; min-height: 34px; min-width: 0; align-self: center; }
+.set-move-title { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.set-move-list b { white-space: nowrap; }
+.set-move-all { min-height: 28px; }
+.set-move-bar { display: flex; gap: 10px; align-items: flex-end; }
+.set-move-bar .field { flex: 1; margin: 0; }
 .set-error { color: var(--danger); font-size: 12px; min-height: 0; margin-top: 6px; }
 .set-error:empty { display: none; }
 .set-private { display: flex; gap: 12px; align-items: center; margin-top: 16px; border-left: 3px solid var(--caramel); background: var(--tan-2); border-radius: 10px; padding: 12px 14px; }

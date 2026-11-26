@@ -61,7 +61,7 @@
       .concat(parents.map(p => [p, s.categories.filter(c => c.parent === p), false]));
     const rest = s.categories.filter(c => !c.parent || !parents.includes(c.parent));
     if (rest.length) sections.push([App.OTHER_PARENT, rest, false]);
-    const removeBtn = c => used.has(c.name) ? '' : `<button class="icon-btn set-remove" data-remove="${esc(c.name)}" aria-label="Ta bort ${esc(c.name)}">${ui.icon('x', 12)}</button>`;
+    const removeBtn = (c, income) => `<button class="icon-btn set-remove" data-remove="${esc(c.name)}" data-income="${income ? 1 : ''}" aria-label="Ta bort ${esc(c.name)}">${ui.icon('x', 12)}</button>`;
     return sections.map(([title, items, income]) => {
       const type = income ? '' : parents.includes(title) ? App.PARENT_TYPES[App.calc.parentType(title)] : '';
       return `
@@ -72,9 +72,94 @@
         return `<li class="set-pill">
           <button type="button" class="set-pill-btn" data-cat="${esc(c.name)}" data-income="${income ? 1 : ''}" aria-label="Ändra ${esc(c.name)}">
             <span class="swatch" style="background:${income ? 'var(--dark)' : c.color}"></span>${esc(c.name)}${tags}
-          </button>${removeBtn(c)}</li>`;
+          </button>${removeBtn(c, income)}</li>`;
       }).join('') || '<li class="muted">Inga underkategorier</li>'}</ul>`;
     }).join('');
+  }
+
+  // Ta bort en kategori. Har den transaktioner flyttas de först till andra kategorier:
+  // bocka i en eller flera, välj ny kategori, flytta – tills listan är tom.
+  function removeCategory(name, replacement) {
+    App.update(s => {
+      s.categories = s.categories.filter(c => c.name !== name);
+      s.incomeCategories = s.incomeCategories.filter(c => c.name !== name);
+      delete s.defaultBudget[name];
+      Object.values(s.budgets).forEach(b => { delete b[name]; });
+      if (s.paycheck && s.paycheck.alloc) delete s.paycheck.alloc[name];
+      [...s.accounts, ...s.goals, ...s.debts].forEach(x => { x.categories = (x.categories || []).filter(c => c !== name); });
+      s.bills.forEach(b => { if (b.category === name) b.category = replacement || ''; });
+    });
+  }
+
+  function openRemoveDialog(name, income) {
+    const dlg = document.getElementById('dialog');
+    const txOf = () => App.state.transactions
+      .filter(t => t.type !== 'transfer' && t.category === name)
+      .sort((a, b) => b.date.localeCompare(a.date));
+    if (!txOf().length) {
+      if (App.confirm(`Ta bort kategorin "${name}"?`)) removeCategory(name);
+      return;
+    }
+    let lastTarget = '';
+    const options = () => (income
+      ? App.state.incomeCategories.filter(c => c.name !== name).map(c => `<option ${c.name === lastTarget ? 'selected' : ''}>${esc(c.name)}</option>`).join('')
+      : ui.categoryOptions(lastTarget));
+
+    const draw = () => {
+      const list = txOf();
+      if (!list.length) {
+        dlg.close();
+        removeCategory(name, lastTarget);
+        return;
+      }
+      dlg.innerHTML = `
+        <form class="dialog-form set-move" novalidate>
+          <p class="overline">Ta bort kategori</p>
+          <h2 class="card-title">${esc(name)}</h2>
+          <p class="muted set-gap">Kategorin har <b>${list.length}</b> ${list.length === 1 ? 'transaktion' : 'transaktioner'}. Bocka i en eller flera, välj vilken kategori de ska flyttas till och tryck på Flytta. När listan är tom tas kategorin bort.</p>
+          <label class="check set-move-all"><input type="checkbox" id="moveAll"> Markera alla</label>
+          <ul class="rows set-move-list">${list.map(t => `<li>
+            <label class="check"><input type="checkbox" name="tx" value="${esc(t.id)}">
+              <span class="set-move-title">${esc(t.title || t.category)}<span class="muted"> · ${App.fmt.date(t.date)}</span></span>
+            </label>
+            <b>${App.fmt.money(t.amount)}</b>
+          </li>`).join('')}</ul>
+          <div class="set-move-bar">
+            ${ui.field('Flytta till', `<select name="target" required>${options()}</select>`)}
+            <button type="submit" class="btn btn-primary" id="moveBtn" disabled>Flytta</button>
+          </div>
+          <div class="dialog-actions"><button type="button" class="btn btn-secondary" data-cancel>Stäng</button></div>
+        </form>`;
+      const form = dlg.querySelector('form');
+      const boxes = [...form.querySelectorAll('[name=tx]')];
+      const btn = form.querySelector('#moveBtn');
+      // Kategorin som tas bort kan inte vara mål
+      form.querySelectorAll('[name=target] option').forEach(o => { if (o.textContent === name) o.remove(); });
+      form.querySelectorAll('[name=target] optgroup').forEach(g => { if (!g.children.length) g.remove(); });
+      if (!form.querySelector('[name=target] option')) {
+        form.querySelector('.set-move-bar').innerHTML = '<p class="set-error">Det finns ingen annan kategori att flytta till. Skapa en ny kategori först.</p>';
+      }
+      const sync = () => {
+        const n = boxes.filter(b => b.checked).length;
+        btn.disabled = !n;
+        btn.textContent = n ? `Flytta ${n}` : 'Flytta';
+        form.querySelector('#moveAll').checked = n === boxes.length;
+      };
+      boxes.forEach(b => b.addEventListener('change', sync));
+      form.querySelector('#moveAll').addEventListener('change', e => { boxes.forEach(b => { b.checked = e.target.checked; }); sync(); });
+      form.querySelector('[data-cancel]').addEventListener('click', () => dlg.close());
+      form.addEventListener('submit', e => {
+        e.preventDefault();
+        const ids = new Set(boxes.filter(b => b.checked).map(b => b.value));
+        const target = form.querySelector('[name=target]').value;
+        if (!ids.size || !target) return;
+        lastTarget = target;
+        App.update(s => { s.transactions.forEach(t => { if (ids.has(t.id)) t.category = target; }); });
+        draw();
+      });
+    };
+    draw();
+    if (dlg.open === false) dlg.showModal();
   }
 
   App.page({
@@ -117,7 +202,7 @@
       const categories = ui.card({
         overline: 'Kategorier', title: 'Ditt utgiftssystem',
         body: `${parentSections(s, used)}
-          <p class="muted set-gap">Tryck på en kategori för att byta namn, huvudkategori eller grupp, eller för att märka den som <b>skuldbetalning</b>. Gruppen (Behov/Nöje/Framtid) styr 50/30/20-planeringen. Pilen visar vart pengarna går (kopplas under Konton, Sparande och Skulder). Kategorier som används i transaktioner kan inte tas bort.</p>
+          <p class="muted set-gap">Tryck på en kategori för att byta namn, huvudkategori eller grupp, eller för att märka den som <b>skuldbetalning</b>. Gruppen (Behov/Nöje/Framtid) styr 50/30/20-planeringen. Pilen visar vart pengarna går (kopplas under Konton, Sparande och Skulder). Tar du bort en kategori som har transaktioner får du först välja vart de ska flyttas.</p>
           <form class="set-add" id="catForm">
             ${ui.field('Kategorinamn', '<input name="name" required maxlength="30" placeholder="t.ex. Husdjur">')}
             ${ui.field('Huvudkategori', `<select name="parent">${parentOptions(s, s.parents[0])}<option value="__income">Inkomster</option></select>`)}
@@ -207,17 +292,7 @@
       });
 
       root.querySelectorAll('[data-remove]').forEach(btn => btn.addEventListener('click', () => {
-        const name = btn.dataset.remove;
-        if (!App.confirm(`Ta bort kategorin "${name}"?`)) return;
-        App.update(s => {
-          s.categories = s.categories.filter(c => c.name !== name);
-          s.incomeCategories = s.incomeCategories.filter(c => c.name !== name);
-          delete s.defaultBudget[name];
-          Object.values(s.budgets).forEach(b => { delete b[name]; });
-          if (s.paycheck && s.paycheck.alloc) delete s.paycheck.alloc[name];
-          [...s.accounts, ...s.goals, ...s.debts].forEach(x => { x.categories = (x.categories || []).filter(c => c !== name); });
-          s.bills.forEach(b => { if (b.category === name) b.category = ''; });
-        });
+        openRemoveDialog(btn.dataset.remove, !!btn.dataset.income);
       }));
 
       const nameTaken = (name, except) => [...App.state.categories, ...App.state.incomeCategories]
