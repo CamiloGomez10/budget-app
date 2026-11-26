@@ -885,7 +885,10 @@ const App = (() => {
     const goal0 = calc.goalOf(t), debt0 = calc.debtOf(t);
     const goals = state.goals, debts = state.debts;
     // Delad utgift: beloppsfältet visar hela beloppet. Ny post i en delad kategori är förifylld som delad.
-    const wasShared = editing ? t.total != null : !!(t.type === 'expense' && calc.isShared(t.category));
+    // Delning visas bara när en räkning betalas, eller för en transaktion som redan är delad
+    const allowShare = !!t.billId || t.total != null;
+    const wasShared = editing ? t.total != null : !!(allowShare && t.type === 'expense' && calc.isShared(t.category));
+    const mineStart = editing && t.total != null ? t.amount : t.shareMine;
     const partner = calc.partnerName();
     const amount0 = editing && t.total != null ? t.total : t.amount;
     dlg.innerHTML = `
@@ -909,8 +912,8 @@ const App = (() => {
           <div class="tx-share" id="txShare">
             <label class="check"><input type="checkbox" name="shared" ${wasShared ? 'checked' : ''}> Delad med ${esc(partner)}</label>
             <div class="tx-share-split" id="txShareSplit">
-              ${ui.field('Din del', ui.moneyInput(`name="mine" step="any" value="${editing && t.total != null ? esc(t.amount) : ''}"`))}
-              ${ui.field(`${esc(partner)}s del`, ui.moneyInput(`name="partnerShare" step="any" value="${editing && t.total != null ? esc(Math.round((t.total - t.amount) * 100) / 100) : ''}"`))}
+              ${ui.field('Din del', ui.moneyInput(`name="mine" step="any" value="${mineStart != null ? esc(mineStart) : ''}"`))}
+              ${ui.field(`${esc(partner)}s del`, ui.moneyInput(`name="partnerShare" step="any" value="${mineStart != null ? esc(Math.round((Number(amount0) - mineStart) * 100) / 100) : ''}"`))}
               <p class="muted">Bara din del räknas i budgeten. Ändrar du en del justeras den andra så att summan blir hela beloppet.</p>
             </div>
           </div>
@@ -967,7 +970,7 @@ const App = (() => {
       $('[name=partnerShare]').value = sp.partner;
     };
     const refreshShare = () => {
-      const on = typeOf() === 'expense';
+      const on = allowShare && typeOf() === 'expense';
       show('tx-share', on);
       const shared = on && $('[name=shared]').checked;
       $('#txAmountLabel').textContent = shared ? 'Hela beloppet' : 'Belopp';
@@ -977,7 +980,7 @@ const App = (() => {
     form.querySelectorAll('[name=type]').forEach(r => r.addEventListener('change', () => { fillCategories(); suggestLinks(); refresh(); }));
     catSelect.addEventListener('change', () => {
       // Byt till en kategori med regel: bocka i delad (för nya poster)
-      if (!editing && typeOf() === 'expense') $('[name=shared]').checked = calc.isShared(catSelect.value);
+      if (!editing && allowShare && typeOf() === 'expense') $('[name=shared]').checked = calc.isShared(catSelect.value);
       if ($('[name=shared]').checked) fillSplit();
       suggestLinks();
       refresh();
@@ -1018,7 +1021,7 @@ const App = (() => {
       };
       if (type === 'transfer') tx.toAccountId = f.get('toAccountId');
       // Delad utgift: hela beloppet sparas i total, din del blir transaktionens belopp
-      if (type === 'expense' && f.get('shared') === 'on') {
+      if (allowShare && type === 'expense' && f.get('shared') === 'on') {
         tx.total = r2(amount);
         const mine = f.get('mine');
         tx.amount = mine === '' || mine == null ? calc.splitShare(tx.total, calc.shareRatio(period.keyOf(tx.date), tx.category)).mine : r2(Number(mine));

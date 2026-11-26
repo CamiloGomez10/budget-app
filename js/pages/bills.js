@@ -36,22 +36,63 @@
     const accId = b.accountId ?? def?.id ?? '';
     return `
       ${ui.field('Namn', `<input name="name" required placeholder="t.ex. Internet" value="${esc(b.name ?? '')}">`)}
-      ${ui.field('Belopp', ui.moneyInput(`name="amount" required min="0" step="any" value="${b.amount ?? 0}"`))}
+      ${ui.field('<span data-bill-amount-label>Belopp</span>', ui.moneyInput(`name="amount" required min="0" step="any" value="${b.amount ?? 0}"`))}
       ${ui.field('Förfallodag', `<input type="date" name="dueDate" required value="${b.dueDate || ''}">`)}
       ${ui.field('Upprepning', `<select name="recurrence">${Object.entries(RECURRENCE).map(([k, v]) => `<option value="${k}" ${k === b.recurrence ? 'selected' : ''}>${v}</option>`).join('')}</select>`)}
       ${ui.field('Kategori', `<select name="category"><option value="">Välj kategori</option>${ui.categoryOptions(b.category)}</select>`)}
+      <div class="bill-share" data-bill-share hidden>
+        <p class="field-label">Delas med ${esc(calc.partnerName())}</p>
+        <div class="tx-share-split">
+          ${ui.field('Din del', ui.moneyInput(`name="mine" step="any" value="${b.mine ?? ''}"`))}
+          ${ui.field(`${esc(calc.partnerName())}s del`, ui.moneyInput(`name="partnerShare" step="any" value="${b.mine != null ? Math.round(((b.amount || 0) - b.mine) * 100) / 100 : ''}"`))}
+          <p class="muted">Kategorin delas. Beloppet är hela räkningen; ändrar du en del justeras den andra.</p>
+        </div>
+      </div>
       ${s.accounts.length ? ui.field('Betalas från', `<select name="accountId">${s.accounts.filter(a => !a.archived || a.id === accId).map(a => `<option value="${a.id}" ${a.id === accId ? 'selected' : ''}>${esc(a.name)}</option>`).join('')}</select>`) : ''}
       ${s.debts.length ? ui.field('Kopplad skuld (valfritt)', `<select name="debtId"><option value="">Ingen</option>${s.debts.map(d => `<option value="${d.id}" ${d.id === b.debtId ? 'selected' : ''}>${esc(d.name)}</option>`).join('')}</select>`) : ''}`;
   }
-  const readBill = f => ({
-    name: String(f.get('name')).trim(),
-    amount: Math.abs(Number(f.get('amount')) || 0),
-    dueDate: f.get('dueDate'),
-    recurrence: f.get('recurrence'),
-    category: f.get('category') || '',
-    accountId: f.get('accountId') || '',
-    debtId: f.get('debtId') || undefined,
-  });
+  const readBill = f => {
+    const b = {
+      name: String(f.get('name')).trim(),
+      amount: Math.abs(Number(f.get('amount')) || 0),
+      dueDate: f.get('dueDate'),
+      recurrence: f.get('recurrence'),
+      category: f.get('category') || '',
+      accountId: f.get('accountId') || '',
+      debtId: f.get('debtId') || undefined,
+    };
+    // Delad kategori: spara din del av räkningen
+    if (calc.isShared(b.category) && f.get('mine') !== '' && f.get('mine') != null) {
+      b.mine = Math.min(b.amount, Math.max(0, Math.round(Number(f.get('mine')) * 100) / 100));
+    }
+    return b;
+  };
+
+  // Visa din och den andras del när kategorin delas. Hela beloppet delas enligt budgetens
+  // fördelning för kategorin (annars 50/50); ändras en del justeras den andra.
+  function wireBillShare(form) {
+    const $ = s => form.querySelector(s);
+    const box = $('[data-bill-share]'), amount = $('[name=amount]'), cat = $('[name=category]');
+    const mine = $('[name=mine]'), other = $('[name=partnerShare]');
+    const r2 = v => Math.round(v * 100) / 100;
+    const fill = () => {
+      const date = $('[name=dueDate]').value || App.iso(today());
+      const sp = calc.splitShare(Number(amount.value) || 0, calc.shareRatio(App.period.keyOf(date), cat.value));
+      mine.value = sp.mine;
+      other.value = sp.partner;
+    };
+    const refresh = () => {
+      const on = calc.isShared(cat.value);
+      box.hidden = !on;
+      $('[data-bill-amount-label]').textContent = on ? 'Hela beloppet' : 'Belopp';
+      if (on && mine.value === '') fill();
+    };
+    cat.addEventListener('change', () => { if (calc.isShared(cat.value)) fill(); refresh(); });
+    amount.addEventListener('input', () => { if (calc.isShared(cat.value)) fill(); });
+    mine.addEventListener('input', () => { other.value = r2((Number(amount.value) || 0) - (Number(mine.value) || 0)); });
+    other.addEventListener('input', () => { mine.value = r2((Number(amount.value) || 0) - (Number(other.value) || 0)); });
+    refresh();
+  }
   const WEEKDAYS = ['M', 'T', 'O', 'T', 'F', 'L', 'S'];
   let selected = null; // budgetperiod ("2026-12" = lönemånaden som slutar i december); sätts vid första visningen
   App.page({
@@ -69,7 +110,7 @@
       // Delade räkningar (t.ex. hyra med sambo) räknas med din del
       const bills = calc.billsInRange(r.start, r.end).map(b => {
         const shared = calc.isShared(b.category);
-        const mine = shared ? calc.splitShare(b.amount, calc.shareRatio(App.period.keyOf(b.date), b.category)).mine : b.amount;
+        const mine = !shared ? b.amount : b.mine != null ? b.mine : calc.splitShare(b.amount, calc.shareRatio(App.period.keyOf(b.date), b.category)).mine;
         return { ...b, mine, shared };
       });
       const total = sum(bills.map(b => b.mine));
@@ -170,6 +211,10 @@
           if (b.category) preset.category = b.category;
           if (b.accountId) preset.accountId = b.accountId;
           if (b.debtId) preset.debtId = b.debtId;
+          // Delad räkning: förifyll din del
+          if (calc.isShared(b.category)) {
+            preset.shareMine = b.mine != null ? b.mine : calc.splitShare(b.amount, calc.shareRatio(App.period.keyOf(date), b.category)).mine;
+          }
           App.openTransactionDialog(preset);
         } else if (btn.dataset.show) {
           const t = App.state.transactions.find(x => x.id === btn.dataset.show);
@@ -181,9 +226,15 @@
             onSubmit(f) {
               const next = readBill(f);
               if (!next.name || !next.dueDate) return false;
-              App.update(s => { const x = s.bills.find(y => y.id === b.id); Object.assign(x, next); if (!next.debtId) delete x.debtId; });
+              App.update(s => {
+                const x = s.bills.find(y => y.id === b.id);
+                Object.assign(x, next);
+                if (!next.debtId) delete x.debtId;
+                if (next.mine == null) delete x.mine;
+              });
             },
           });
+          wireBillShare(document.querySelector('#dialog form'));
         } else if (btn.dataset.delete) {
           const b = find(btn.dataset.delete);
           if (await App.confirm(`Ta bort räkningen "${b.name}"? Den försvinner från alla månader. Betalningar finns kvar som transaktioner.`)) {
@@ -192,6 +243,7 @@
         }
       });
 
+      wireBillShare(root.querySelector('#billForm'));
       root.querySelector('#billForm').addEventListener('submit', e => {
         e.preventDefault();
         const b = readBill(new FormData(e.target));

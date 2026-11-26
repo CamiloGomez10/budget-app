@@ -298,7 +298,7 @@ const DATE = z.string().describe("Datum som YYYY-MM-DD");
 const INSTRUCTIONS = `Den här kopplingen ger åtkomst till användarens privata budgetapp. Alla belopp är i svenska kronor.
 Börja med budget_info om du inte redan vet vilka kategorier och konton som finns. Hämta alltid siffror med verktygen i stället för att gissa.
 Datum räknas i svensk tid; budget_info visar dagens datum. Använd bara befintliga kategorier och konton när du lägger in eller ändrar något.
-Delade kostnader: användaren delar vissa kostnader med sin sambo och var och en betalar sin egen del. För utgifter i delade kategorier (se budget_info) anger du HELA beloppet; användarens del räknas ut enligt budgetens fördelning för kategorin (annars 50/50) och kan anges med my_share. Det är användarens del som räknas i budgeten. Transaktionens amount är användarens del, total_amount hela beloppet.`;
+Delade kostnader: användaren delar vissa kostnader med sin sambo och var och en betalar sin egen del. Vanliga transaktioner delas inte. Bara när användaren ber om det, eller det gäller en delad räkning (t.ex. hyra eller el i en delad kategori, se budget_info), sätter du shared: true och anger HELA beloppet; användarens del räknas ut enligt budgetens fördelning för kategorin (annars 50/50) och kan anges med my_share. Det är användarens del som räknas i budgeten. Transaktionens amount är användarens del, total_amount hela beloppet.`;
 
 function buildServer(supabase: Db, userId: string) {
   const server = new McpServer({ name: "budget", version: "1.0.0" }, { instructions: INSTRUCTIONS });
@@ -482,7 +482,7 @@ function buildServer(supabase: Db, userId: string) {
         date: DATE,
         type: z.enum(["expense", "income", "transfer"]),
         amount: z.number().describe("Positivt belopp i kronor. För delade utgifter: HELA beloppet (användarens del räknas ut)."),
-        shared: z.boolean().optional().describe("Dela med sambon. Standard: ja om kategorin är delad, annars nej."),
+        shared: z.boolean().optional().describe("Dela med sambon (bara när användaren ber om det eller det är en delad räkning, t.ex. hyra eller el). Standard: nej."),
         my_share: z.number().optional().describe("Användarens del om den ska avvika från budgetens fördelning/50-50 (bara för delade)."),
         title: z.string().describe("Kort beskrivning, t.ex. butikens namn"),
         category: z.string().optional().describe("Befintlig kategori (behövs inte för överföringar)"),
@@ -514,7 +514,7 @@ function buildServer(supabase: Db, userId: string) {
             const cat = findCategory(state, p.type, p.category);
             if (!cat) throw new Error(`${where}kategorin "${p.category || ""}" finns inte.`);
             tx.category = cat.name;
-            if (p.type === "expense" && (p.shared ?? isShared(state, cat.name))) {
+            if (p.type === "expense" && p.shared) {
               tx.total = amount;
               tx.amount = p.my_share != null
                 ? Math.min(amount, Math.max(0, round(p.my_share)))

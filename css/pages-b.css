@@ -124,3 +124,4 @@
 .tx-share-split { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; margin-top: 4px; }
 .tx-share-split .muted { grid-column: 1 / -1; font-size: 12px; margin: 0; }
 .bill-mine { display: block; font-family: var(--sans); font-size: 11px; color: var(--muted); text-align: right; }
+.bill-share { display: flex; flex-direction: column; gap: 6px; background: var(--track); border-radius: 12px; padding: 10px 12px; }
