@@ -106,7 +106,6 @@ const App = (() => {
       snapshots: [],               // används inte längre (historiken räknas fram), finns kvar för gammal data
       noSpend: {},                 // manuella ändringar av köpfria dagar: { "2026-11-03": true|false }
       paycheck: { start: iso(new Date(now.getFullYear(), now.getMonth(), 1)), end: iso(new Date(now.getFullYear(), now.getMonth() + 1, 0)), income: 0, alloc: {} },
-      forecast: { start: 10000, monthly: 1500, years: 10, rate: 5 },
       strategy: 'snowball',
     };
   }
@@ -132,6 +131,7 @@ const App = (() => {
     if (!s || s.version !== 2) return null;
     const out = { ...emptyState(), ...s, settings: { ...emptyState().settings, ...s.settings } };
     delete out.settings.currency; // appen visar alltid svenska kronor
+    delete out.forecast;          // sidan Sparprognos är borttagen
     // Äldre data utan inkomstkategorier: hämta dem från befintliga inkomster
     if (!Array.isArray(s.incomeCategories)) {
       const names = [...new Set((s.transactions || []).filter(t => t.type === 'income').map(t => t.category).filter(Boolean))];

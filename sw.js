@@ -22,7 +22,6 @@ const SHELL = [
   './js/pages/annual.js',
   './js/pages/monthly.js',
   './js/pages/paycheck.js',
-  './js/pages/forecast.js',
   './js/pages/transactions.js',
   './js/pages/bills.js',
   './js/pages/accounts.js',
