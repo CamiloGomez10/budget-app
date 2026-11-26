@@ -1,0 +1,4 @@
+# Kopplingen till Claude gör sin egen inloggningskontroll (OAuth), så Supabase
+# ska inte kräva en nyckel i förväg. I Supabase-panelen: stäng av "Enforce JWT verification".
+[functions.budget-mcp]
+verify_jwt = false

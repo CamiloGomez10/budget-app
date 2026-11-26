@@ -21,7 +21,6 @@ const SHELL = [
   './js/vendor/supabase.js',
   './js/core.js',
   './js/sync.js',
-  './js/assistant.js',
   './js/pages/dashboard.js',
   './js/pages/annual.js',
   './js/pages/monthly.js',

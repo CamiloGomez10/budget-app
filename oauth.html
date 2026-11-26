@@ -1,0 +1,112 @@
+<!DOCTYPE html>
+<html lang="sv">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="theme-color" content="#3b251d">
+  <title>Koppla Claude – Budget</title>
+  <link rel="icon" href="icon.svg" type="image/svg+xml">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Cormorant+Garamond:wght@500;600;700&family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="style.css">
+  <style>
+    .oauth-wrap { min-height: 100vh; display: grid; place-items: center; padding: 24px 16px; }
+    .oauth-card { width: min(440px, 100%); display: flex; flex-direction: column; gap: 16px; }
+    .oauth-brand { display: flex; align-items: center; gap: 10px; }
+    .oauth-brand .brand-mark { background: var(--dark); color: var(--white); }
+    .oauth-title { font-family: var(--serif); font-size: 28px; font-weight: 600; line-height: 1.15; margin: 0; }
+    .oauth-list { margin: 0; padding-left: 18px; display: flex; flex-direction: column; gap: 6px; font-size: 14px; }
+    .oauth-actions { display: flex; gap: 10px; justify-content: flex-end; flex-wrap: wrap; }
+    .oauth-actions .btn { padding: 11px 18px; font-size: 14px; }
+    .oauth-error { color: var(--danger); font-size: 14px; }
+    .oauth-user { font-size: 13px; color: var(--muted); }
+  </style>
+</head>
+<body>
+  <main class="oauth-wrap">
+    <section class="card oauth-card" id="box" aria-live="polite">
+      <p class="muted">Laddar…</p>
+    </section>
+  </main>
+
+  <!-- Nyare supabase-js än appens, med stöd för OAuth-godkännande -->
+  <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.119.0/dist/umd/supabase.js"></script>
+  <script>
+  // Godkännandesida: när du lägger till budgetkopplingen i Claude skickas du hit.
+  // Här loggar du in med ditt budgetkonto och godkänner att Claude får läsa och
+  // ändra din budget. Supabase skickar sedan tillbaka dig till Claude.
+  (() => {
+    const SUPABASE_URL = 'https://zbcfcqsigyoqtjkwuqtq.supabase.co';
+    const SUPABASE_KEY = 'sb_publishable_ffQZZ49USPnfiQmb6ylN-w_o9a2teqK';
+    const box = document.getElementById('box');
+    const esc = s => String(s ?? '').replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+    const id = new URLSearchParams(location.search).get('authorization_id');
+    const head = `<div class="oauth-brand"><span class="brand-mark">B.</span><span class="brand-name" style="color:var(--text)">Budget</span></div>`;
+    const show = html => { box.innerHTML = head + html; };
+    const problem = msg => show(`<h1 class="oauth-title">Något gick fel</h1><p class="oauth-error">${esc(msg)}</p>
+      <p class="muted">Gå tillbaka till Claude och försök koppla igen.</p>`);
+
+    if (!id) { problem('Länken saknar en giltig förfrågan.'); return; }
+    if (!window.supabase) { problem('Kunde inte ladda inloggningen. Kontrollera internetanslutningen.'); return; }
+    const client = window.supabase.createClient(SUPABASE_URL, SUPABASE_KEY, { auth: { persistSession: true, autoRefreshToken: true } });
+
+    function loginForm(error = '') {
+      show(`<h1 class="oauth-title">Logga in för att koppla Claude</h1>
+        <p class="muted">Använd samma konto som i budgetappen.</p>
+        <form id="login" class="form-stack">
+          <label class="field"><span class="field-label">E-post</span><input name="email" type="email" autocomplete="email" required></label>
+          <label class="field"><span class="field-label">Lösenord</span><input name="password" type="password" autocomplete="current-password" required></label>
+          ${error ? `<p class="oauth-error">${esc(error)}</p>` : ''}
+          <button class="btn btn-primary btn-block" type="submit">Logga in</button>
+        </form>`);
+      box.querySelector('#login').addEventListener('submit', async e => {
+        e.preventDefault();
+        const f = new FormData(e.target);
+        e.target.querySelector('button').disabled = true;
+        const { error: err } = await client.auth.signInWithPassword({ email: String(f.get('email')).trim(), password: String(f.get('password')) });
+        if (err) loginForm('Fel e-post eller lösenord.');
+        else consent();
+      });
+      box.querySelector('input').focus();
+    }
+
+    async function consent() {
+      const { data: auth } = await client.auth.getUser();
+      if (!auth || !auth.user) { loginForm(); return; }
+      const { data, error } = await client.auth.oauth.getAuthorizationDetails(id);
+      if (error) { problem(error.message || 'Förfrågan har gått ut.'); return; }
+      // Redan godkänt tidigare: skicka tillbaka direkt
+      if (!data.authorization_id && data.redirect_url) { location.href = data.redirect_url; return; }
+      const name = data.client && data.client.name ? data.client.name : 'Ett program';
+      show(`<h1 class="oauth-title">${esc(name)} vill komma åt din budget</h1>
+        <p>Om du godkänner kan ${esc(name)}:</p>
+        <ul class="oauth-list">
+          <li>läsa dina transaktioner, budgetar, konton, sparmål och skulder</li>
+          <li>lägga in, ändra och ta bort transaktioner</li>
+        </ul>
+        <p class="muted">Bara din egen budget. Du kan ta bort kopplingen när som helst i Claude.</p>
+        <p class="oauth-user">Inloggad som ${esc(auth.user.email)} · <button type="button" class="link-btn" data-switch>Byt konto</button></p>
+        <div class="oauth-actions">
+          <button type="button" class="btn btn-secondary" data-deny>Neka</button>
+          <button type="button" class="btn btn-primary" data-approve>Godkänn</button>
+        </div>`);
+      const act = async approve => {
+        box.querySelectorAll('button').forEach(b => { b.disabled = true; });
+        const res = approve
+          ? await client.auth.oauth.approveAuthorization(id, { skipBrowserRedirect: true })
+          : await client.auth.oauth.denyAuthorization(id, { skipBrowserRedirect: true });
+        if (res.error || !res.data || !res.data.redirect_url) { problem((res.error && res.error.message) || 'Kunde inte slutföra.'); return; }
+        show(`<h1 class="oauth-title">${approve ? 'Klart!' : 'Nekat'}</h1><p class="muted">Skickar dig tillbaka till ${esc(name)}…</p>`);
+        location.href = res.data.redirect_url;
+      };
+      box.querySelector('[data-approve]').addEventListener('click', () => act(true));
+      box.querySelector('[data-deny]').addEventListener('click', () => act(false));
+      box.querySelector('[data-switch]').addEventListener('click', async () => { await client.auth.signOut(); loginForm(); });
+    }
+
+    consent().catch(e => problem(e.message || String(e)));
+  })();
+  </script>
+</body>
+</html>
