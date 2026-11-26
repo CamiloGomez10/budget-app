@@ -61,16 +61,23 @@
   border: 1px solid var(--card-border); border-radius: 99px; background: var(--white);
   padding: 4px 6px 4px 12px; font-size: 12.5px; font-weight: 500; max-width: 100%;
 }
-.set-group {
-  width: auto; min-height: 0; border: 0; background: var(--tan-2); border-radius: 99px;
-  padding: 2px 8px; font-size: 11px; font-weight: 500; color: var(--muted); cursor: pointer;
-  max-width: 150px; flex: none;
+.set-pill { padding: 0 4px 0 0; }
+.set-pill-btn {
+  display: inline-flex; align-items: center; gap: 7px; border: 0; background: none; cursor: pointer;
+  padding: 5px 4px 5px 12px; font: inherit; color: var(--text); text-align: left; flex-wrap: wrap; min-width: 0;
 }
-.set-parent-select {
-  width: auto; min-height: 0; border: 1px solid var(--card-border); background: var(--white); border-radius: 99px;
-  padding: 2px 8px; font-size: 11px; font-weight: 500; color: var(--text); cursor: pointer;
-  max-width: 150px; flex: none;
-}
+.set-pill-btn:hover { color: var(--dark); }
+.set-tag { background: var(--tan-2); border-radius: 99px; padding: 1px 8px; font-size: 11px; color: var(--muted); }
+.set-tag-debt { background: var(--dark); color: var(--white); }
+.set-link { font-size: 11px; color: var(--caramel); font-weight: 600; }
+.set-prows > li { align-items: flex-end; flex-wrap: wrap; gap: 10px; }
+.set-pname { flex: 1; min-width: 130px; }
+.set-pname .field, .set-ptype { margin: 0; }
+.set-ptype { width: 150px; }
+.set-ptype-fixed { width: 150px; padding-bottom: 10px; }
+.set-pbtns { display: flex; gap: 2px; padding-bottom: 6px; }
+.set-pbtns .icon-btn:disabled { opacity: .3; cursor: default; }
+.set-add-parent { grid-template-columns: 1fr 1fr; margin-top: 14px; }
 .set-parent { font-family: var(--serif); font-size: 17px; font-weight: 600; margin: 14px 0 8px; }
 .set-parent:first-child { margin-top: 0; }
 .set-parent .muted { font-family: var(--sans); font-size: 11px; font-weight: 500; }
@@ -86,6 +93,8 @@
   .ns-top { grid-template-columns: 1fr; }
 }
 @media (max-width: 760px) {
+  .set-ptype, .set-ptype-fixed { width: 100%; }
+  .set-add-parent { grid-template-columns: 1fr; }
   .ns-grid { gap: 4px; }
   .ns-cell { min-height: 56px; padding: 5px; border-radius: 8px; }
   .ns-num { font-size: 14px; }

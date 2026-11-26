@@ -23,6 +23,36 @@
   function parentOptions(s, selected) {
     return (s.parents || []).map(p => `<option ${p === selected ? 'selected' : ''}>${esc(p)}</option>`).join('');
   }
+  const GROUP_SHORT = { needs: 'Behov', wants: 'Nöje', future: 'Framtid' };
+
+  // Vart pengarna i en kategori tar vägen: konto, sparmål, skuld (kopplas på respektive sida)
+  function links(s, name) {
+    const has = x => (x.categories || []).includes(name);
+    return [...s.accounts.filter(a => !a.archived && has(a)), ...s.goals.filter(has), ...s.debts.filter(has)].map(x => x.name);
+  }
+
+  // Huvudkategorierna: namn, typ, ordning
+  function parentRows(s) {
+    const parents = s.parents || [];
+    return `<ul class="rows set-prows">
+      <li>
+        <span class="set-pname">${ui.field('Rubrik för inkomster', `<input data-income-label value="${esc(s.incomeLabel || 'Inkomster')}">`)}</span>
+        <span class="muted set-ptype-fixed">Inkomster</span>
+      </li>
+      ${parents.map((p, i) => {
+        const count = s.categories.filter(c => c.parent === p).length;
+        return `<li>
+          <span class="set-pname">${ui.field(`Huvudkategori ${i + 1}`, `<input data-pname="${esc(p)}" value="${esc(p)}">`)}</span>
+          ${ui.field('Typ', `<select data-ptype="${esc(p)}">${opt(Object.entries(App.PARENT_TYPES), App.calc.parentType(p))}</select>`, 'set-ptype')}
+          <span class="set-pbtns">
+            <button class="icon-btn" data-pmove="${esc(p)}" data-dir="-1" ${i === 0 ? 'disabled' : ''} aria-label="Flytta upp ${esc(p)}">${ui.icon('up', 14)}</button>
+            <button class="icon-btn" data-pmove="${esc(p)}" data-dir="1" ${i === parents.length - 1 ? 'disabled' : ''} aria-label="Flytta ner ${esc(p)}">${ui.icon('down', 14)}</button>
+            ${count ? '' : `<button class="icon-btn" data-premove="${esc(p)}" aria-label="Ta bort ${esc(p)}">${ui.icon('x', 14)}</button>`}
+          </span>
+        </li>`;
+      }).join('')}
+    </ul>`;
+  }
 
   // Kategorierna uppdelade per huvudkategori: Inkomster först, sedan i vald ordning
   function parentSections(s, used) {
@@ -32,16 +62,19 @@
     const rest = s.categories.filter(c => !c.parent || !parents.includes(c.parent));
     if (rest.length) sections.push([App.OTHER_PARENT, rest, false]);
     const removeBtn = c => used.has(c.name) ? '' : `<button class="icon-btn set-remove" data-remove="${esc(c.name)}" aria-label="Ta bort ${esc(c.name)}">${ui.icon('x', 12)}</button>`;
-    return sections.map(([title, items, income]) => `
-      <h3 class="set-parent">${esc(title)} <span class="muted">${items.length}</span></h3>
-      <ul class="set-pills">${items.map(c => income
-        ? `<li class="set-pill"><span class="swatch" style="background:var(--dark)"></span>${esc(c.name)}${removeBtn(c)}</li>`
-        : `<li class="set-pill">
-            <span class="swatch" style="background:${c.color}"></span>${esc(c.name)}
-            <select class="set-parent-select" data-cat="${esc(c.name)}" aria-label="Huvudkategori för ${esc(c.name)}">${parentOptions(s, c.parent)}${parents.includes(c.parent) ? '' : `<option selected value="">${App.OTHER_PARENT}</option>`}</select>
-            <select class="set-group" data-cat="${esc(c.name)}" aria-label="Grupp för ${esc(c.name)}">${opt(GROUPS, c.group)}</select>
-            ${removeBtn(c)}
-          </li>`).join('') || '<li class="muted">Inga underkategorier</li>'}</ul>`).join('');
+    return sections.map(([title, items, income]) => {
+      const type = income ? '' : parents.includes(title) ? App.PARENT_TYPES[App.calc.parentType(title)] : '';
+      return `
+      <h3 class="set-parent">${esc(title)} <span class="muted">${type ? `${type} · ` : ''}${items.length}</span></h3>
+      <ul class="set-pills">${items.map(c => {
+        const to = income ? [] : links(s, c.name);
+        const tags = income ? '' : `<span class="set-tag">${GROUP_SHORT[c.group] || ''}</span>${c.debt ? '<span class="set-tag set-tag-debt">Skuld</span>' : ''}${to.length ? `<span class="set-link">→ ${esc(to.join(' · '))}</span>` : ''}`;
+        return `<li class="set-pill">
+          <button type="button" class="set-pill-btn" data-cat="${esc(c.name)}" data-income="${income ? 1 : ''}" aria-label="Ändra ${esc(c.name)}">
+            <span class="swatch" style="background:${income ? 'var(--dark)' : c.color}"></span>${esc(c.name)}${tags}
+          </button>${removeBtn(c)}</li>`;
+      }).join('') || '<li class="muted">Inga underkategorier</li>'}</ul>`;
+    }).join('');
   }
 
   App.page({
@@ -64,16 +97,27 @@
             </select>`)}
             ${ui.field('Lönedag', `<input type="number" name="payday" min="1" max="28" value="${esc(s.settings.period?.payday || 25)}">`)}
             <p class="muted">${periodHelp()}</p>
-            ${ui.field('Budgeten börjar', `<input type="date" name="startDate" value="${esc(s.settings.startDate)}">`)}
             <button class="btn btn-primary btn-block" type="submit">Spara inställningar</button>
             ${saved ? '<p class="set-saved" role="status">✓ Sparat</p>' : ''}
           </form>`,
       });
 
+      const parentsCard = ui.card({
+        overline: 'Huvudkategorier', title: 'Struktur',
+        body: `<p class="muted set-gap">Typen styr hur kategorierna räknas i hela appen: <b>Sparande</b> kan fylla sparkonton och sparmål, <b>Fasta kostnader</b> räknas inte som köp i Köpfri utmaning. Ordningen är den ordning budgeten visas i.</p>
+          ${parentRows(s)}
+          <form class="set-add set-add-parent" id="parentForm">
+            ${ui.field('Ny huvudkategori', '<input name="name" required maxlength="30" placeholder="t.ex. Barn">')}
+            ${ui.field('Typ', `<select name="type">${opt(Object.entries(App.PARENT_TYPES), 'variable')}</select>`)}
+            <button class="btn btn-secondary" type="submit">${ui.icon('plus', 14)} Lägg till</button>
+          </form>
+          <p class="set-error" id="parentError" role="alert"></p>`,
+      });
+
       const categories = ui.card({
         overline: 'Kategorier', title: 'Ditt utgiftssystem',
         body: `${parentSections(s, used)}
-          <p class="muted set-gap">Välj huvudkategori för varje underkategori. Gruppen (Behov/Nöje/Framtid) styr 50/30/20-planeringen. Kategorier som används i transaktioner kan inte tas bort.</p>
+          <p class="muted set-gap">Tryck på en kategori för att byta namn, huvudkategori eller grupp, eller för att märka den som <b>skuldbetalning</b>. Gruppen (Behov/Nöje/Framtid) styr 50/30/20-planeringen. Pilen visar vart pengarna går (kopplas under Konton, Sparande och Skulder). Kategorier som används i transaktioner kan inte tas bort.</p>
           <form class="set-add" id="catForm">
             ${ui.field('Kategorinamn', '<input name="name" required maxlength="30" placeholder="t.ex. Husdjur">')}
             ${ui.field('Huvudkategori', `<select name="parent">${parentOptions(s, s.parents[0])}<option value="__income">Inkomster</option></select>`)}
@@ -108,7 +152,7 @@
           <button class="btn btn-secondary" id="setBackup">${ui.icon('down', 14)} Ladda ner säkerhetskopia</button>`,
       });
 
-      return `<div class="grid-2">${foundation}${categories}</div><div class="grid-3">${backup}${demo}${install}</div>`;
+      return `<div class="grid-2">${foundation}${parentsCard}</div>${categories}<div class="grid-3">${backup}${demo}${install}</div>`;
     },
 
     mount(root) {
@@ -135,7 +179,6 @@
             mode: f.get('periodMode') === 'payday' ? 'payday' : 'calendar',
             payday: Math.min(28, Math.max(1, Number(f.get('payday')) || 25)),
           };
-          s.settings.startDate = f.get('startDate') || s.settings.startDate;
         });
         saved = true;
         App.render();
@@ -172,22 +215,93 @@
           delete s.defaultBudget[name];
           Object.values(s.budgets).forEach(b => { delete b[name]; });
           if (s.paycheck && s.paycheck.alloc) delete s.paycheck.alloc[name];
+          [...s.accounts, ...s.goals, ...s.debts].forEach(x => { x.categories = (x.categories || []).filter(c => c !== name); });
+          s.bills.forEach(b => { if (b.category === name) b.category = ''; });
         });
       }));
 
-      root.querySelectorAll('.set-group').forEach(sel => sel.addEventListener('change', () => {
-        App.update(s => {
-          const c = s.categories.find(x => x.name === sel.dataset.cat);
-          if (c) c.group = sel.value;
+      const nameTaken = (name, except) => [...App.state.categories, ...App.state.incomeCategories]
+        .some(c => c.name !== except && c.name.toLowerCase() === name.toLowerCase());
+
+      // Ändra en kategori: namn, huvudkategori, grupp, skuldbetalning
+      root.querySelectorAll('.set-pill-btn').forEach(btn => btn.addEventListener('click', () => {
+        const income = !!btn.dataset.income;
+        const name = btn.dataset.cat;
+        const s = App.state;
+        const c = (income ? s.incomeCategories : s.categories).find(x => x.name === name);
+        if (!c) return;
+        App.formDialog({
+          overline: income ? esc(s.incomeLabel || 'Inkomster') : 'Kategori', title: `Ändra ${esc(name)}`,
+          body: `${ui.field('Namn', `<input name="name" required maxlength="30" value="${esc(name)}">`)}
+            ${income ? '<p class="muted">Byter du namn uppdateras alla transaktioner och budgetar.</p>' : `
+            ${ui.field('Huvudkategori', `<select name="parent">${parentOptions(s, c.parent)}</select>`)}
+            ${ui.field('Grupp (50/30/20)', `<select name="group">${opt(GROUPS, c.group)}</select>`)}
+            <label class="check"><input type="checkbox" name="debt" ${c.debt ? 'checked' : ''}> Skuldbetalning (t.ex. Klarna, Walley, lån)</label>
+            <p class="muted">Skuldbetalningar kan kopplas till en skuld under Skuldavbetalning. Byter du namn uppdateras alla transaktioner, budgetar och kopplingar.</p>`}
+            <p class="set-error" id="catEditError" role="alert"></p>`,
+          onSubmit(f) {
+            const next = String(f.get('name')).trim();
+            if (!next) return false;
+            if (next !== name && nameTaken(next, name)) {
+              document.getElementById('catEditError').textContent = `Kategorin "${next}" finns redan.`;
+              return false;
+            }
+            if (next !== name) App.renameCategory(name, next);
+            if (!income) {
+              App.update(st => {
+                const x = st.categories.find(y => y.name === next);
+                x.parent = f.get('parent');
+                x.group = f.get('group');
+                if (f.get('debt') === 'on') x.debt = true; else delete x.debt;
+              });
+            }
+          },
         });
       }));
 
-      root.querySelectorAll('.set-parent-select').forEach(sel => sel.addEventListener('change', () => {
+      // Huvudkategorier
+      root.querySelector('[data-income-label]').addEventListener('change', e => {
+        const v = e.target.value.trim();
+        if (v) App.update(s => { s.incomeLabel = v; });
+      });
+      root.querySelectorAll('[data-pname]').forEach(inp => inp.addEventListener('change', () => {
+        const old = inp.dataset.pname;
+        const v = inp.value.trim();
+        if (!v || v === old) { inp.value = old; return; }
+        if (App.state.parents.some(p => p.toLowerCase() === v.toLowerCase())) {
+          root.querySelector('#parentError').textContent = `Huvudkategorin "${v}" finns redan.`;
+          inp.value = old;
+          return;
+        }
+        App.renameParent(old, v);
+      }));
+      root.querySelectorAll('[data-ptype]').forEach(sel => sel.addEventListener('change', () => {
+        App.update(s => { s.parentTypes = { ...(s.parentTypes || {}), [sel.dataset.ptype]: sel.value }; });
+      }));
+      root.querySelectorAll('[data-pmove]').forEach(btn => btn.addEventListener('click', () => {
         App.update(s => {
-          const c = s.categories.find(x => x.name === sel.dataset.cat);
-          if (c) c.parent = sel.value;
+          const i = s.parents.indexOf(btn.dataset.pmove);
+          const j = i + Number(btn.dataset.dir);
+          if (i < 0 || j < 0 || j >= s.parents.length) return;
+          [s.parents[i], s.parents[j]] = [s.parents[j], s.parents[i]];
         });
       }));
+      root.querySelectorAll('[data-premove]').forEach(btn => btn.addEventListener('click', () => {
+        const p = btn.dataset.premove;
+        if (!App.confirm(`Ta bort huvudkategorin "${p}"?`)) return;
+        App.update(s => { s.parents = s.parents.filter(x => x !== p); if (s.parentTypes) delete s.parentTypes[p]; });
+      }));
+      root.querySelector('#parentForm').addEventListener('submit', e => {
+        e.preventDefault();
+        const f = new FormData(e.target);
+        const name = String(f.get('name')).trim();
+        if (!name) return;
+        if (App.state.parents.some(p => p.toLowerCase() === name.toLowerCase()) || name === App.OTHER_PARENT) {
+          root.querySelector('#parentError').textContent = `Huvudkategorin "${name}" finns redan.`;
+          return;
+        }
+        App.update(s => { s.parents.push(name); s.parentTypes = { ...(s.parentTypes || {}), [name]: f.get('type') }; });
+      });
 
       root.querySelector('#setDemo').addEventListener('click', e => {
         App.setMode(e.currentTarget.dataset.to);

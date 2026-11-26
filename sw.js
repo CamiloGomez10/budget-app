@@ -1,6 +1,6 @@
 // Service worker: gör appen tillgänglig offline.
 // Höj versionen när filerna ändras så att den gamla cachen rensas.
-const CACHE = 'budget-v6';
+const CACHE = 'budget-v7';
 const FONT_CACHE = 'budget-fonts-v1';
 
 const SHELL = [

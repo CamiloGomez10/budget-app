@@ -6,12 +6,10 @@
 
   // Datum med minst ett köp
   function purchaseDays(s) {
-    const fixed = (s.parents || [])[0];
     const out = new Set();
     for (const t of s.transactions) {
-      if (t.type !== 'expense' || t.amount <= 0 || t.billId || calc.debtOf(t) || calc.isSaving(t.category)) continue;
-      const c = s.categories.find(x => x.name === t.category);
-      if (c && fixed && c.parent === fixed) continue;
+      if (t.type !== 'expense' || t.amount <= 0 || t.billId || calc.debtOf(t)) continue;
+      if (calc.categoryKind(t.category) !== 'variable') continue; // fasta kostnader, sparande och skulder är inga köp
       out.add(t.date);
     }
     return out;
@@ -102,7 +100,7 @@
         ${ui.card({
           overline: fmt.month(key),
           title: 'Dina köpfria dagar',
-          body: `<p class="muted ns-help">Räknas ut från dina transaktioner: en dag är köpfri om du inte har några utgifter förutom fasta kostnader (${esc((s.parents || [])[0] || '')}), sparande, skuldbetalningar och räkningar. Tryck på en dag för att ändra den själv (markeras med *), tryck igen för att återgå.</p>
+          body: `<p class="muted ns-help">Räknas ut från dina transaktioner: en dag är köpfri om du inte har några utgifter i kategorier av typen Rörliga utgifter (fasta kostnader, sparande, skuldbetalningar och räkningar räknas inte). Tryck på en dag för att ändra den själv (markeras med *), tryck igen för att återgå.</p>
             <div class="ns-grid" role="group" aria-label="Kalender för ${fmt.month(key)}">
               ${WEEKDAYS.map(w => `<div class="ns-head" aria-hidden="true">${w}</div>`).join('')}
               ${cells}

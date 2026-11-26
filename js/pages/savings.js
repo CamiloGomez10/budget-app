@@ -10,7 +10,7 @@
   // Kategorier som kan fylla på ett mål: sparande/framtid, plus de som redan är kopplade
   function savingCategories(s) {
     const linked = new Set(s.goals.flatMap(g => g.categories || []));
-    return s.categories.filter(c => c.group === 'future' || /spar|saving/i.test(c.parent || '') || linked.has(c.name));
+    return s.categories.filter(c => calc.isSaving(c.name) || linked.has(c.name));
   }
 
   function goalFields(s, g = {}) {

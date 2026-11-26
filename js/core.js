@@ -13,6 +13,10 @@ const App = (() => {
   const CATEGORY_COLORS = ['#9a4a22', '#00897a', '#d08a1c', '#6b5ab2', '#7a8a12', '#c4507c', '#3f7fc4', '#7a4a8a'];
   // Huvudkategorier för utgifter, i den ordning de visas. Inkomster visas alltid först.
   const DEFAULT_PARENTS = ['Fasta kostnader', 'Sparande', 'Rörliga utgifter', 'Livsstil'];
+  // Typ per huvudkategori: styr vad kategorierna under den räknas som i hela appen
+  const PARENT_TYPES = { fixed: 'Fasta kostnader', variable: 'Rörliga utgifter', saving: 'Sparande' };
+  const DEFAULT_PARENT_TYPES = { 'Fasta kostnader': 'fixed', 'Sparande': 'saving', 'Rörliga utgifter': 'variable', 'Livsstil': 'variable' };
+  const DEBT_HINT = /lån|skuld|avbetal|kredit|klarna|walley|debt|loan/i;
   const DEFAULT_CATEGORIES = [
     { name: 'Boende',     group: 'needs',  parent: 'Fasta kostnader'  },
     { name: 'Mat',        group: 'needs',  parent: 'Rörliga utgifter' },
@@ -21,7 +25,7 @@ const App = (() => {
     { name: 'Hälsa',      group: 'needs',  parent: 'Fasta kostnader'  },
     { name: 'Utbildning', group: 'needs',  parent: 'Rörliga utgifter' },
     { name: 'Sparande',   group: 'future', parent: 'Sparande'         },
-    { name: 'Skulder',    group: 'future', parent: 'Fasta kostnader'  },
+    { name: 'Skulder',    group: 'future', parent: 'Fasta kostnader', debt: true },
   ].map((c, i) => ({ ...c, color: CATEGORY_COLORS[i] }));
   const DEFAULT_INCOME = [{ name: 'Lön' }, { name: 'Övrig inkomst' }];
   const OTHER_PARENT = 'Övrigt';
@@ -88,6 +92,9 @@ const App = (() => {
       settings: { currency: 'SEK', frequency: 'monthly', startDate: `${now.getFullYear()}-01-01`, heroImage: null, period: { mode: 'calendar', payday: 25 } },
       categories: DEFAULT_CATEGORIES.map(c => ({ ...c })),   // utgiftskategorier (underkategorier)
       parents: [...DEFAULT_PARENTS],                           // huvudkategorier för utgifter, i ordning
+      parentTypes: { ...DEFAULT_PARENT_TYPES },                // { huvudkategori: fixed|variable|saving }
+      incomeLabel: 'Inkomster',                                // rubriken för inkomstkategorierna
+      typesV: 1,                                               // kategorityper är satta (styr migreringen)
       incomeCategories: DEFAULT_INCOME.map(c => ({ ...c })),  // underkategorier för inkomster
       defaultBudget: {},           // { Boende: 8500, ... } används när en månad saknar egen plan
       budgets: {},                 // { "2026-11": { Boende: 8500, ... } }
@@ -141,6 +148,17 @@ const App = (() => {
     if (!Array.isArray(s.incomeCategories)) {
       const names = [...new Set((s.transactions || []).filter(t => t.type === 'income').map(t => t.category).filter(Boolean))];
       out.incomeCategories = (names.length ? names : DEFAULT_INCOME.map(c => c.name)).map(name => ({ name }));
+    }
+    // Typ på huvudkategorierna: huvudkategorier som saknar typ får en gissning från namnet
+    const types = { ...(s.parentTypes || {}) };
+    (out.parents || []).forEach(p => {
+      if (!types[p]) types[p] = /fast|fixed/i.test(p) ? 'fixed' : /spar|saving/i.test(p) ? 'saving' : 'variable';
+    });
+    out.parentTypes = Object.fromEntries((out.parents || []).map(p => [p, types[p]]));
+    // Skuldbetalning (en gång): kategorier vars namn låter som lån eller avbetalningar
+    if (!s.typesV) {
+      out.categories = (out.categories || []).map(c => (c.debt === undefined && DEBT_HINT.test(c.name) ? { ...c, debt: true } : c));
+      out.typesV = 1;
     }
     // Konton: det gamla manuella saldot ersätts av ett startsaldo (0 = saldot när budgeten började)
     out.accounts = (out.accounts || []).map(a => {
@@ -554,9 +572,17 @@ const App = (() => {
       return keys.slice(-n);
     },
     // Är en utgiftskategori sparande? (grupp Framtid, eller kopplad till sparkonto/sparmål)
-    isSaving: name => !!(state.categories.find(c => c.name === name)?.group === 'future'
-      || calc.accountForCategory(name) || state.goals.some(g => (g.categories || []).includes(name)))
-      && !state.debts.some(d => (d.categories || []).includes(name)),
+    // ---------- Kategorityper (väljs under Inställningar) ----------
+    parentType: p => (state.parentTypes || {})[p] || 'variable',
+    // 'debt' | 'fixed' | 'variable' | 'saving' för en utgiftskategori
+    categoryKind(name) {
+      const c = state.categories.find(x => x.name === name);
+      if (!c) return 'variable';
+      return c.debt ? 'debt' : calc.parentType(c.parent);
+    },
+    isSaving: name => calc.categoryKind(name) === 'saving',
+    isFixed: name => calc.categoryKind(name) === 'fixed',
+    isDebt: name => calc.categoryKind(name) === 'debt',
 
     totalDebt: () => sum(calc.debts().map(d => d.balance)) + calc.negativeAccounts(),
     netWorth: () => calc.assets() - calc.totalDebt(),
@@ -996,6 +1022,29 @@ const App = (() => {
     return window.confirm(message);
   }
 
+  // ---------- Namnbyten (uppdaterar allt som pekar på namnet) ----------
+  function renameCategory(oldName, newName) {
+    const swapKeys = obj => { if (obj && oldName in obj) { obj[newName] = obj[oldName]; delete obj[oldName]; } };
+    const swapList = list => (list || []).map(n => (n === oldName ? newName : n));
+    update(s => {
+      [...s.categories, ...s.incomeCategories].forEach(c => { if (c.name === oldName) c.name = newName; });
+      s.transactions.forEach(t => { if (t.category === oldName) t.category = newName; });
+      swapKeys(s.defaultBudget);
+      Object.values(s.budgets).forEach(swapKeys);
+      if (s.paycheck) swapKeys(s.paycheck.alloc);
+      [...s.accounts, ...s.goals, ...s.debts].forEach(x => { x.categories = swapList(x.categories); });
+      s.bills.forEach(b => { if (b.category === oldName) b.category = newName; });
+    });
+  }
+  function renameParent(oldName, newName) {
+    update(s => {
+      s.parents = s.parents.map(p => (p === oldName ? newName : p));
+      s.categories.forEach(c => { if (c.parent === oldName) c.parent = newName; });
+      s.parentTypes = s.parentTypes || {};
+      if (oldName in s.parentTypes) { s.parentTypes[newName] = s.parentTypes[oldName]; delete s.parentTypes[oldName]; }
+    });
+  }
+
   // ---------- Router ----------
   const PAGES = [];
   let current = null;
@@ -1086,7 +1135,8 @@ const App = (() => {
     get state() { return state; },
     get mode() { return mode; },
     get storageKeys() { return KEYS; },
-    COLORS, CATEGORY_COLORS, CURRENCIES, OTHER_PARENT,
+    COLORS, CATEGORY_COLORS, CURRENCIES, OTHER_PARENT, PARENT_TYPES,
+    renameCategory, renameParent,
     uid, esc, iso, ym, parseISO, today, daysInMonth, addMonths, sum, clamp, pad2,
     fmt, calc, ui, charts, period, categoryColor, currencySymbol,
     openTransactionDialog, confirm: confirmDialog, bindTooltip, tipRow,

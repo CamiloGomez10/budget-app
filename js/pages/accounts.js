@@ -16,10 +16,10 @@
     return items;
   }
 
-  // Kategorier som kan kopplas till ett konto: sparande/framtid, plus de som redan är kopplade
+  // Kategorier som kan kopplas till ett konto: typen Sparande, plus de som redan är kopplade
   function savingCategories(s) {
     const linked = new Set(s.accounts.flatMap(a => a.categories || []));
-    return s.categories.filter(c => c.group === 'future' || /spar|saving/i.test(c.parent || '') || linked.has(c.name));
+    return s.categories.filter(c => calc.isSaving(c.name) || linked.has(c.name));
   }
 
   const signed = v => `${v > 0 ? '+' : v < 0 ? '−' : ''}${fmt.money(Math.abs(v))}`;

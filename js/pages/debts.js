@@ -18,10 +18,10 @@
     return [...active, ...done];
   }
 
-  // Kategorier som kan betala av en skuld: de som heter något med lån/skuld/avbetalning, plus redan kopplade
+  // Kategorier som kan betala av en skuld: märkta som Skuldbetalning under Inställningar, plus redan kopplade
   function debtCategories(s) {
     const linked = new Set(s.debts.flatMap(d => d.categories || []));
-    return s.categories.filter(c => /lån|skuld|avbetal|kredit|klarna|walley|debt|loan/i.test(c.name + ' ' + (c.parent || '')) || linked.has(c.name));
+    return s.categories.filter(c => calc.isDebt(c.name) || linked.has(c.name));
   }
 
   function debtFields(s, d = {}) {
