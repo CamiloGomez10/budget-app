@@ -204,5 +204,5 @@
     setStatus('signedout');
   }
 
-  App.sync = { init, sync, get status() { return status; }, get user() { return user; } };
+  App.sync = { init, sync, get status() { return status; }, get user() { return user; }, get client() { return client; } };
 })();
