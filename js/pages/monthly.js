@@ -50,10 +50,14 @@
     }
     return `<tr class="mon-row" data-cat="${n}" data-kind="${kind}">
       <td>
-        <span class="mon-grip" tabindex="0" role="button" aria-label="Flytta ${n}. Dra, eller använd pil upp och pil ner">${GRIP}</span>
-        <b>${n}</b>${shared ? ` ${ui.pill('Delad', 'soft')}` : ''}
-        <p class="muted">${fmt.money(r.actual)} av ${fmt.money(r.planned)}${r.planned > 0 ? ` · ${fmt.pct(share)}` : ''}</p>
-        ${ui.progress(share, color)}
+        <div class="mon-cat">
+          <div class="mon-cat-line">
+            <span class="mon-grip" tabindex="0" role="button" aria-label="Flytta ${n}. Dra, eller använd pil upp och pil ner">${GRIP}</span>
+            <b>${n}</b>${shared ? ui.pill('Delad', 'soft') : ''}
+          </div>
+          <p class="muted">${fmt.money(r.actual)} av ${fmt.money(r.planned)}${r.planned > 0 ? ` · ${fmt.pct(share)}` : ''}</p>
+          ${ui.progress(share, color)}
+        </div>
       </td>
       <td>${planCell}</td>
       <td class="mon-num">${fmt.money(r.actual)}</td>
@@ -61,18 +65,33 @@
     </tr>`;
   }
 
-  function groupHTML(g, key) {
+  // Ihopfällda huvudkategorier sparas på enheten (bara en visningsinställning)
+  const COLLAPSE_KEY = 'budget-collapsed-groups';
+  const collapsed = () => { try { return new Set(JSON.parse(localStorage.getItem(COLLAPSE_KEY)) || []); } catch (e) { return new Set(); } };
+  const saveCollapsed = set => { try { localStorage.setItem(COLLAPSE_KEY, JSON.stringify([...set])); } catch (e) { /* ignorera */ } };
+  const CHEVRON = '<svg class="mon-chev" viewBox="0 0 24 24" width="16" height="16" aria-hidden="true"><path d="M6 9l6 6 6-6" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>';
+
+  function groupHTML(g, key, closed) {
     const planned = sum(g.items.map(r => r.planned));
     const actual = sum(g.items.map(r => r.actual));
     const diff = diffOf(g.kind, planned, actual);
-    return `<tbody class="mon-group ${g.kind === 'income' ? 'mon-group-income' : ''}">
-      <tr class="mon-group-head">
-        <th scope="rowgroup">${esc(g.name)} <span class="mon-count">${g.items.length}</span></th>
-        <td class="mon-num">${fmt.money(planned)}</td>
+    const sums = `<td class="mon-num">${fmt.money(planned)}</td>
         <td class="mon-num">${fmt.money(actual)}</td>
-        <td class="mon-num"><span class="${diff < 0 ? 'neg' : ''}">${fmt.money(diff)}</span></td>
+        <td class="mon-num"><span class="${diff < 0 ? 'neg' : ''}">${fmt.money(diff)}</span></td>`;
+    const isClosed = closed.has(g.name);
+    // Summan står sist i gruppen. När gruppen är ihopfälld visas den på rubrikraden i stället.
+    return `<tbody class="mon-group ${g.kind === 'income' ? 'mon-group-income' : ''} ${isClosed ? 'is-collapsed' : ''}" data-group="${esc(g.name)}">
+      <tr class="mon-group-head">
+        <th scope="rowgroup">
+          <button type="button" class="mon-toggle" aria-expanded="${!isClosed}">${CHEVRON}<span>${esc(g.name)}</span> <span class="mon-count">${g.items.length}</span></button>
+        </th>
+        ${sums.replace(/class="mon-num"/g, 'class="mon-num mon-head-sum"')}
       </tr>
       ${g.items.map(r => rowHTML(r, g.kind, key)).join('')}
+      <tr class="mon-group-foot">
+        <td>Totalt ${esc(g.name)}</td>
+        ${sums}
+      </tr>
     </tbody>`;
   }
 
@@ -268,6 +287,7 @@
       const key = keyOf();
       const r = App.period.range(key);
       const groups = calc.grouped(key);
+      const closedGroups = collapsed();
       const expenseGroups = groups.filter(g => g.kind === 'expense');
       const income = groups.find(g => g.kind === 'income');
       const incPlanned = income ? sum(income.items.map(x => x.planned)) : 0;
@@ -294,7 +314,7 @@
         <div class="mon-table-wrap">
           <table class="mon-table">
             <thead><tr><th>Kategori</th><th>Planerat</th><th>Faktiskt</th><th>Skillnad</th></tr></thead>
-            ${groups.map(g => groupHTML(g, key)).join('')}
+            ${groups.map(g => groupHTML(g, key, closedGroups)).join('<tbody class="mon-gap" aria-hidden="true"><tr><td colspan="4"></td></tr></tbody>')}
             <tfoot>
               <tr><td>Inkomster</td><td class="mon-num">${fmt.money(incPlanned)}</td><td class="mon-num">${fmt.money(incActual)}</td><td></td></tr>
               <tr><td>Utgifter</td><td class="mon-num">${fmt.money(expPlanned)}</td><td class="mon-num">${fmt.money(expActual)}</td><td class="mon-num"><b class="${expPlanned - expActual < 0 ? 'neg' : ''}">${fmt.money(expPlanned - expActual)}</b></td></tr>
@@ -375,6 +395,18 @@
         if (!st.sharedTotals[key]) st.sharedTotals[key] = {};
       };
       enableDrag(root);
+
+      // Fäll ihop och öppna huvudkategorier
+      root.querySelectorAll('.mon-toggle').forEach(t => t.addEventListener('click', () => {
+        const body = t.closest('.mon-group');
+        const name = body.dataset.group;
+        const set = collapsed();
+        const closing = !body.classList.contains('is-collapsed');
+        body.classList.toggle('is-collapsed', closing);
+        t.setAttribute('aria-expanded', String(!closing));
+        closing ? set.add(name) : set.delete(name);
+        saveCollapsed(set);
+      }));
       root.querySelectorAll('.mon-input').forEach(input => {
         input.addEventListener('change', () => {
           const value = Math.max(0, Number(input.value) || 0);

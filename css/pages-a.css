@@ -35,7 +35,39 @@
 .mon-count { font-family: var(--sans); font-size: 11px; font-weight: 500; color: var(--muted); margin-left: 4px; }
 .mon-total td { border-top: 2px solid var(--dark) !important; }
 .mon-table tbody .mon-row td:first-child { width: 38%; }
-.mon-table tbody .mon-row td:first-child .muted { margin: 2px 0 6px; }
+/* Alla kategorirader lika höga, innehållet centrerat */
+.mon-table tbody .mon-row td { height: 78px; padding-top: 8px; padding-bottom: 8px; }
+.mon-cat { display: flex; flex-direction: column; justify-content: center; gap: 3px; min-height: 58px; }
+.mon-cat-line { display: flex; align-items: center; gap: 6px; height: 24px; min-width: 0; }
+.mon-cat-line b { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.mon-cat-line .pill { flex: none; }
+.mon-cat .muted { margin: 0; font-size: 12px; }
+.mon-cat .progress { margin-top: 3px; }
+.mon-table tbody tr.mon-row td .progress { background: rgba(255, 255, 255, 0.75); }
+/* Ihopfällbara huvudkategorier */
+.mon-toggle { display: inline-flex; align-items: center; gap: 6px; border: 0; background: none; padding: 0; font: inherit; color: inherit; cursor: pointer; }
+.mon-toggle:focus-visible { outline: 2px solid var(--caramel); outline-offset: 3px; border-radius: 4px; }
+.mon-chev { color: var(--muted); transition: transform 0.15s; flex: none; }
+.mon-group.is-collapsed .mon-chev { transform: rotate(-90deg); }
+.mon-group.is-collapsed .mon-row, .mon-group.is-collapsed .mon-group-foot { display: none; }
+.mon-group:not(.is-collapsed) .mon-head-sum > * , .mon-group:not(.is-collapsed) .mon-head-sum { color: transparent !important; }
+/* Varje huvudkategori i en egen bubbla, en ton mörkare än kortet, med luft emellan */
+.mon-table { --bubble: #f2eee5; --bubble-stripe: #ebe4d6; --bubble-foot: #ddd3bf; }
+.mon-group th, .mon-group td { background: var(--bubble); }
+.mon-table tbody.mon-group tr.mon-row:nth-child(odd) td { background: var(--bubble); }
+/* Första kategorin (rad 2 i gruppen) får den mörkare randen, så den skiljer sig från rubriken */
+.mon-table tbody.mon-group tr.mon-row:nth-child(even) td { background: var(--bubble-stripe); }
+.mon-group-head th, .mon-group-head td { background: var(--bubble) !important; border-bottom: 1px solid rgba(84, 56, 45, 0.25); padding-top: 14px; padding-bottom: 10px; }
+.mon-group-head th:first-child { border-top-left-radius: 14px; }
+.mon-group-head td:last-child { border-top-right-radius: 14px; }
+.mon-group-foot td { padding: 12px 14px; font-size: 13px; font-weight: 700; color: var(--white); background: var(--table-head) !important; }
+.mon-group-foot .neg { color: #f3c2b5; }
+.mon-group-foot td:first-child { border-bottom-left-radius: 14px; font-weight: 600; }
+.mon-group-foot td:last-child { border-bottom-right-radius: 14px; }
+.mon-group.is-collapsed .mon-group-head th, .mon-group.is-collapsed .mon-group-head td { border-bottom: 0; }
+.mon-group.is-collapsed .mon-group-head th:first-child { border-bottom-left-radius: 14px; }
+.mon-group.is-collapsed .mon-group-head td:last-child { border-bottom-right-radius: 14px; }
+.mon-gap td { height: 14px; padding: 0 !important; background: transparent !important; }
 .mon-table tbody td:nth-child(2) { width: 22%; }
 .mon-table tfoot td { padding-top: 8px; padding-bottom: 8px; }
 .mon-table tfoot tr:first-child td { border-top: 1px solid var(--card-border); padding-top: 18px; }
@@ -95,7 +127,7 @@
 
 /* Delade kategorier i budgeten: bara din del syns, fördelningen i en liten ruta */
 .mon-share-btn {
-  display: flex; align-items: center; gap: 8px; width: 100%; min-height: 42px; padding: 0 12px;
+  display: flex; align-items: center; gap: 8px; width: 100%; height: 38px; padding: 0 12px;
   background: var(--white); border: 1px solid var(--card-border); border-radius: 10px;
   font: inherit; color: var(--text); cursor: pointer; text-align: left;
 }
@@ -129,8 +161,15 @@
 
 /* Dra och släpp kategorier i budgeten */
 .mon-row > td:first-child { cursor: grab; -webkit-user-select: none; user-select: none; -webkit-touch-callout: none; }
-.mon-grip { display: inline-grid; place-items: center; width: 18px; height: 22px; margin: 0 4px 0 -6px; color: var(--muted); opacity: 0.45; vertical-align: -5px; border-radius: 4px; }
+.mon-grip { display: inline-grid; place-items: center; width: 18px; height: 22px; margin: 0 0 0 -6px; color: var(--muted); opacity: 0.45; border-radius: 4px; flex: none; }
 .mon-row:hover .mon-grip, .mon-grip:focus-visible { opacity: 1; }
 .mon-grip:focus-visible { outline: 2px solid var(--caramel); }
 .mon-row.is-dragging td { position: relative; z-index: 3; background: var(--card) !important; box-shadow: 0 10px 24px rgba(43, 33, 28, 0.18); }
 body.mon-dragging, body.mon-dragging * { cursor: grabbing !important; -webkit-user-select: none; user-select: none; }
+
+/* Inga tunna ljusa streck mellan kolumnerna (avrundning av cellbredder): varje cell
+   täcker skarven mot nästa med sin egen färg */
+.mon-group th:not(:last-child), .mon-group td:not(:last-child) { box-shadow: 1px 0 0 0 var(--seam, transparent); }
+.mon-group-head th, .mon-group-head td, .mon-table tbody.mon-group tr.mon-row:nth-child(odd) td { --seam: var(--bubble); }
+.mon-table tbody.mon-group tr.mon-row:nth-child(even) td { --seam: var(--bubble-stripe); }
+.mon-group-foot td { --seam: var(--table-head); }
