@@ -64,7 +64,7 @@
       <h3 class="set-parent">${esc(title)} <span class="muted">${type ? `${type} · ` : ''}${items.length}</span></h3>
       <ul class="set-pills">${items.map(c => {
         const to = income ? [] : links(s, c.name);
-        const tags = income ? '' : `<span class="set-tag">${GROUP_SHORT[c.group] || ''}</span>${c.debt ? '<span class="set-tag set-tag-debt">Skuld</span>' : ''}${to.length ? `<span class="set-link">→ ${esc(to.join(' · '))}</span>` : ''}`;
+        const tags = income ? '' : `<span class="set-tag">${GROUP_SHORT[c.group] || ''}</span>${c.debt ? '<span class="set-tag set-tag-debt">Skuld</span>' : ''}${App.calc.isShared(c.name) ? '<span class="set-tag set-tag-shared">Delad</span>' : ''}${to.length ? `<span class="set-link">→ ${esc(to.join(' · '))}</span>` : ''}`;
         return `<li class="set-pill">
           <button type="button" class="set-pill-btn" data-cat="${esc(c.name)}" data-income="${income ? 1 : ''}" aria-label="Ändra ${esc(c.name)}">
             <span class="swatch" style="background:${income ? 'var(--dark)' : c.color}"></span>${esc(c.name)}${tags}
@@ -211,18 +211,15 @@
           </div>`,
       });
 
-      // Delade kostnader: bocka i vilka kategorier du delar
+      // Delade kostnader: vem du delar med. Vilka kategorier som delas bockas i på kategorin.
       const sharing = s.settings.sharing || {};
-      const sharedCats = new Set(sharing.categories || []);
       const partner = App.calc.partnerName();
+      const sharedList = (sharing.categories || []).filter(n => s.categories.some(c => c.name === n));
       const shareCard = ui.card({
         overline: 'Delade kostnader', title: `Det du delar med ${esc(partner)}`,
-        body: `<p class="muted set-gap">Bocka i det ni delar. Ni betalar var och en er egen del. I <b>Budget</b> och när du lägger in en utgift skriver du <b>hela beloppet</b>, så delas det 50/50 och du kan justera din del. Bara din del räknas i budgeten och dras från ditt konto.</p>
+        body: `<p class="muted set-gap">Tryck på en kategori ovan och bocka i <b>Delas med ${esc(partner)}</b>. Ni betalar var och en er egen del: i Budget och när du lägger in en utgift skriver du hela beloppet, det delas 50/50 och du kan justera. Bara din del räknas i budgeten och dras från ditt konto.</p>
           ${ui.field('Delar med', `<input id="sharePartner" maxlength="30" value="${esc(sharing.partner || '')}" placeholder="Sambo">`)}
-          ${[...(s.parents || []), App.OTHER_PARENT].map(p => {
-            const list = s.categories.filter(c => (c.parent && s.parents.includes(c.parent) ? c.parent : App.OTHER_PARENT) === p);
-            return list.length ? `<div class="set-share-group"><p class="field-label">${esc(p)}</p><div class="acc-checks">${list.map(c => `<label class="check"><input type="checkbox" data-share-cat="${esc(c.name)}" ${sharedCats.has(c.name) ? 'checked' : ''}> ${esc(c.name)}</label>`).join('')}</div></div>` : '';
-          }).join('')}`,
+          <p class="set-gap">${sharedList.length ? `Delas nu: <b>${sharedList.map(esc).join(', ')}</b>` : '<span class="muted">Inga delade kategorier än.</span>'}</p>`,
       });
 
       const backup = ui.card({
@@ -240,11 +237,6 @@
       // Delade kostnader
       const setSharing = fn => App.update(st => { st.settings.sharing = st.settings.sharing || {}; fn(st.settings.sharing); });
       root.querySelector('#sharePartner').addEventListener('change', e => setSharing(sh => { sh.partner = e.target.value.trim(); }));
-      root.querySelectorAll('[data-share-cat]').forEach(el => el.addEventListener('change', () => setSharing(sh => {
-        const list = new Set(sh.categories || []);
-        el.checked ? list.add(el.dataset.shareCat) : list.delete(el.dataset.shareCat);
-        sh.categories = [...list];
-      })));
       root.querySelector('#setBackup').addEventListener('click', () => {
         const payload = { app: 'budget', exportedAt: new Date().toISOString(), mode: App.mode, data: App.state };
         const blob = new Blob([JSON.stringify(payload, null, 2)], { type: 'application/json' });
@@ -312,8 +304,11 @@
             ${income ? '<p class="muted">Byter du namn uppdateras alla transaktioner och budgetar.</p>' : `
             ${ui.field('Huvudkategori', `<select name="parent">${parentOptions(s, c.parent)}</select>`)}
             ${ui.field('Grupp (50/30/20)', `<select name="group">${opt(GROUPS, c.group)}</select>`)}
-            <label class="check"><input type="checkbox" name="debt" ${c.debt ? 'checked' : ''}> Skuldbetalning (t.ex. Klarna, Walley, lån)</label>
-            <p class="muted">Skuldbetalningar kan kopplas till en skuld under Mål › Skulder. Byter du namn uppdateras alla transaktioner, budgetar och kopplingar.</p>`}
+            <div class="set-checks">
+              <label class="check"><input type="checkbox" name="shared" ${App.calc.isShared(name) ? 'checked' : ''}> Delas med ${esc(App.calc.partnerName())}</label>
+              <label class="check"><input type="checkbox" name="debt" ${c.debt ? 'checked' : ''}> Skuldbetalning (t.ex. Klarna, Walley, lån)</label>
+            </div>
+            <p class="muted">Delad: du skriver in hela beloppet och appen delar det 50/50 (du kan justera), bara din del räknas. Skuldbetalningar kan kopplas till en skuld under Mål › Skulder. Byter du namn uppdateras alla transaktioner, budgetar och kopplingar.</p>`}
             <p class="set-error" id="catEditError" role="alert"></p>`,
           onSubmit(f) {
             const next = String(f.get('name')).trim();
@@ -329,6 +324,10 @@
                 x.parent = f.get('parent');
                 x.group = f.get('group');
                 if (f.get('debt') === 'on') x.debt = true; else delete x.debt;
+                st.settings.sharing = st.settings.sharing || {};
+                const list = new Set(st.settings.sharing.categories || []);
+                f.get('shared') === 'on' ? list.add(next) : list.delete(next);
+                st.settings.sharing.categories = [...list];
               });
             }
           },
