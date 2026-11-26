@@ -1,6 +1,7 @@
 // Service worker: gör appen tillgänglig offline.
-// Höj versionen när filerna ändras så att den gamla cachen rensas.
-const CACHE = 'budget-v9';
+// Versionen finns i js/version.js – höj den där när filerna ändras så att den gamla cachen rensas.
+importScripts('./js/version.js');
+const CACHE = 'budget-v' + self.APP_VERSION;
 const FONT_CACHE = 'budget-fonts-v1';
 
 const SHELL = [
@@ -12,6 +13,7 @@ const SHELL = [
   './css/pages-a.css',
   './css/pages-b.css',
   './css/pages-c.css',
+  './js/version.js',
   './js/vendor/supabase.js',
   './js/core.js',
   './js/sync.js',

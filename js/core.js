@@ -1027,6 +1027,8 @@ const App = (() => {
 
   function start() {
     load();
+    const v = document.getElementById('appVersion');
+    if (v && self.APP_VERSION) v.textContent = `Version ${self.APP_VERSION}`;
     document.getElementById('menuBtn').addEventListener('click', () => {
       document.getElementById('sidebar').classList.add('open');
       document.getElementById('scrim').classList.add('open');
