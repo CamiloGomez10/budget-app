@@ -112,7 +112,12 @@
       const plan = ui.card({
         overline: 'Fördela inkomsten',
         title: 'Budget per kategori',
-        right: s.budgets[key] ? '' : '<span>Använder standardbudgeten tills du ändrar något</span>',
+        right: (() => {
+          const from = calc.plannedFrom(key);
+          if (from === key) return '';
+          if (!from) return '<span>Ingen budget än. Fyll i beloppen nedan.</span>';
+          return `<span>Samma som ${fmt.month(from)} tills du ändrar något</span>`;
+        })(),
         body: table,
       });
 
@@ -164,7 +169,7 @@
         offset = mv === 0 ? 0 : offset + mv;
         App.render();
       }));
-      // Första ändringen i en period kopierar standardbudgeten till perioden
+      // Första ändringen i en period kopierar den budget som visas (från en tidigare period) till perioden
       root.querySelectorAll('.mon-input').forEach(input => {
         input.addEventListener('change', () => {
           const value = Math.max(0, Number(input.value) || 0);

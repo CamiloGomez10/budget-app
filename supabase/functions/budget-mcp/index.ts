@@ -33,7 +33,7 @@ type Bill = { id: string; name: string; amount: number; dueDate: string; recurre
 type State = {
   transactions: Tx[]; accounts: Account[]; categories: Category[]; incomeCategories: Category[];
   parents?: string[]; goals: Goal[]; debts: Debt[]; bills: Bill[];
-  budgets: Record<string, Record<string, number>>; defaultBudget?: Record<string, number>;
+  budgets: Record<string, Record<string, number>>;
   settings: { defaultAccountId?: string; period?: { mode?: string; payday?: number } };
   incomeLabel?: string;
 };
@@ -151,7 +151,13 @@ function makeCalc(state: State) {
     for (const t of list) if (t.type === type) out[t.category] = (out[t.category] || 0) + t.amount;
     return out;
   };
-  const planned = (key: string) => state.budgets?.[key] || state.defaultBudget || {};
+  // Periodens egen plan, annars den senaste perioden innan som har en plan, annars 0
+  const plannedFrom = (key: string) => {
+    const budgets = state.budgets || {};
+    if (budgets[key]) return key;
+    return Object.keys(budgets).filter((k) => k < key).sort().pop() || null;
+  };
+  const planned = (key: string) => { const src = plannedFrom(key); return src ? state.budgets[src] : {}; };
   function billTx(b: Bill, key: string) {
     const linked = state.transactions.find((t) => t.billId === b.id && t.billMonth === key);
     if (linked) return linked;
@@ -170,7 +176,7 @@ function makeCalc(state: State) {
       return [{ name: b.name, amount: b.amount, date: `${key}-${pad2(day)}`, paid: !!billTx(b, key) }];
     });
   }
-  return { today, period, accName, defaultAccount, accounts, goals, debts, txBetween, txInPeriod, byCat, planned, billsForMonth };
+  return { today, period, accName, defaultAccount, accounts, goals, debts, txBetween, txInPeriod, byCat, planned, plannedFrom, billsForMonth };
 }
 
 // ---------- Läsa och skriva budgeten ----------
@@ -346,6 +352,8 @@ function buildServer(supabase: Db, userId: string) {
     const isCurrent = key === c.period.current();
     return text({
       period: key, from: r.start, to: r.end, is_current: isCurrent, days_left: isCurrent ? c.period.daysLeft(key) : null,
+      budget_taken_from: c.plannedFrom(key), // samma period = egen plan, annan = kopierad från den, null = ingen budget
+
       planned_income: sum(state.incomeCategories.map((x) => Number(plan[x.name]) || 0)),
       planned_expenses: sum(state.categories.map((x) => Number(plan[x.name]) || 0)),
       actual_income: round(income), actual_expenses: round(expense), left_after_expenses: round(income - expense), groups,

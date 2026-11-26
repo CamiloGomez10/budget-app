@@ -79,7 +79,6 @@
     App.update(s => {
       s.categories = s.categories.filter(c => c.name !== name);
       s.incomeCategories = s.incomeCategories.filter(c => c.name !== name);
-      delete s.defaultBudget[name];
       Object.values(s.budgets).forEach(b => { delete b[name]; });
       if (s.paycheck && s.paycheck.alloc) delete s.paycheck.alloc[name];
       [...s.accounts, ...s.goals, ...s.debts].forEach(x => { x.categories = (x.categories || []).filter(c => c !== name); });

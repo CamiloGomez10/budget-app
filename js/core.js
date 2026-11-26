@@ -89,7 +89,6 @@ const App = (() => {
       incomeLabel: 'Inkomster',                                // rubriken för inkomstkategorierna
       typesV: 1,                                               // kategorityper är satta (styr migreringen)
       incomeCategories: DEFAULT_INCOME.map(c => ({ ...c })),  // underkategorier för inkomster
-      defaultBudget: {},           // { Boende: 8500, ... } används när en månad saknar egen plan
       budgets: {},                 // { "2026-11": { Boende: 8500, ... } }
       // type transfer = flytt mellan egna konton (toAccountId), räknas inte i budgeten.
       // goalId/debtId kopplar till sparmål/skuld, billId + billMonth till en betald räkning.
@@ -132,6 +131,7 @@ const App = (() => {
     delete out.settings.currency; // appen visar alltid svenska kronor
     delete out.forecast;          // sidan Sparprognos är borttagen
     delete out.noSpend;           // sidan Köpfri utmaning är borttagen
+    delete out.defaultBudget;     // ingen standardbudget: en månad utan plan tar förra månadens
     // Äldre data utan inkomstkategorier: hämta dem från befintliga inkomster
     if (!Array.isArray(s.incomeCategories)) {
       const names = [...new Set((s.transactions || []).filter(t => t.type === 'income').map(t => t.category).filter(Boolean))];
@@ -323,8 +323,14 @@ const App = (() => {
       return out;
     },
 
-    // Planerad budget för en månad (egen plan, annars standardbudgeten)
-    planned: key => state.budgets[key] || state.defaultBudget || {},
+    // Planerad budget för en period: periodens egen plan, annars den senaste perioden
+    // innan som har en plan. Finns ingen tidigare plan är allt 0.
+    planned: key => { const src = calc.plannedFrom(key); return src ? state.budgets[src] : {}; },
+    // Vilken period budgeten hämtas från (samma nyckel = egen plan, null = ingen plan)
+    plannedFrom(key) {
+      if (state.budgets[key]) return key;
+      return Object.keys(state.budgets).filter(k => k < key).sort().pop() || null;
+    },
     // Bara utgiftskategorier räknas (inkomstbudgeten ligger i samma objekt)
     plannedTotal: key => { const p = calc.planned(key); return sum(state.categories.map(c => p[c.name])); },
     plannedIncome: key => { const p = calc.planned(key); return sum(state.incomeCategories.map(c => p[c.name])); },
@@ -964,7 +970,6 @@ const App = (() => {
     update(s => {
       [...s.categories, ...s.incomeCategories].forEach(c => { if (c.name === oldName) c.name = newName; });
       s.transactions.forEach(t => { if (t.category === oldName) t.category = newName; });
-      swapKeys(s.defaultBudget);
       Object.values(s.budgets).forEach(swapKeys);
       if (s.paycheck) swapKeys(s.paycheck.alloc);
       [...s.accounts, ...s.goals, ...s.debts].forEach(x => { x.categories = swapList(x.categories); });
