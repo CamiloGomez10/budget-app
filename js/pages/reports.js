@@ -39,9 +39,10 @@
 
   App.page({
     id: 'rapporter',
-    title: 'Rapporter & insikter',
-    overline: 'Analys',
-    heading: 'Ekonomiska signaler, tydligt sammankopplade.',
+    group: 'oversikt',
+    tab: 'Trender',
+    title: 'Trender',
+    heading: 'Trender över tid',
     icon: 'report',
 
     render(s) {
@@ -94,19 +95,18 @@
         body: `
           <p class="overline rep-sub">Skuldminskning</p>
           ${d.payments.length ? '' : `<p class="muted">Skuldhistoriken visas när du har registrerat betalningar på dina skulder.</p>`}
-          <div class="grid-2 rep-mini">
-            ${ui.stat({ label: 'Betald amortering', value: fmt.money(principal) })}
-            ${ui.stat({ label: 'Betald ränta', value: fmt.money(0), hint: 'Räntan registreras inte separat' })}
+          <div class="rep-mini">
+            ${ui.stat({ label: 'Betalt på skulder', value: fmt.money(principal) })}
           </div>
           <p class="overline rep-sub">Nettoförmögenhet</p>
-          ${d.nwValues.length ? '<div class="chart" id="repNetWorth"></div>' : ui.empty('Ingen historik ännu', 'Spara en ögonblicksbild under Nettoförmögenhet.')}`,
+          ${d.nwValues.length ? '<div class="chart" id="repNetWorth"></div>' : ui.empty('Ingen historik ännu', 'Historiken räknas fram från dina konton och skulder.')}`,
       });
 
       const monthly = ui.card({
         overline: 'Betalningshistorik', title: 'Total månadsbetalning',
         body: sum(d.payByMonth) > 0
           ? `<div class="chart" id="repPayments"></div>`
-          : ui.empty('Ditt diagram visas här när du har lagt in data.', 'Registrera en betalning under Skuldavbetalning för att börja.'),
+          : ui.empty('Ditt diagram visas här när du har lagt in data.', 'Registrera en betalning under Mål › Skulder för att börja.'),
       });
 
       return `${select}${spending}<div class="grid-2">${where}${cashflow}</div><div class="grid-2">${savings}${position}</div>${monthly}`;

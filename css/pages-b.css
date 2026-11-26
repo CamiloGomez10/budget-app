@@ -1,5 +1,5 @@
 /* ============================================================
-   Sidor grupp B: Räkningar, Konton, Sparande, Skulder, Nettoförmögenhet
+   Sidor grupp B: Räkningar, Förmögenhet, Mål (Sparmål, Skulder)
    ============================================================ */
 
 /* ---------- Räkningar & kalender ---------- */
@@ -30,9 +30,6 @@
 }
 .bill-chip-dark { background: var(--dark); color: var(--white); }
 .bill-chip-paid { opacity: 0.5; text-decoration: line-through; }
-
-/* ---------- Konton ---------- */
-.acc-total { font-size: 17px; color: var(--text); margin-left: 4px; }
 .acc-list > li.acc-item { display: block; padding: 0; }
 .acc-item details > summary { list-style: none; cursor: pointer; display: flex; align-items: center; gap: 12px; padding: 12px 0; }
 .acc-item details > summary::-webkit-details-marker { display: none; }
@@ -91,9 +88,6 @@
 .debt-cols p:last-child { font-weight: 600; overflow-wrap: anywhere; }
 .debt-warn { color: var(--danger); }
 .debt-actions { display: flex; gap: 6px; flex-wrap: wrap; }
-
-/* ---------- Nettoförmögenhet ---------- */
-.nw-actions { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; }
 .nw-hero { background: var(--dark); color: var(--white); border-radius: var(--radius); padding: 22px 24px; box-shadow: var(--shadow); }
 .nw-hero .overline { color: rgba(255, 255, 255, 0.7); }
 .nw-hero-value { font-family: var(--serif); font-size: 40px; font-weight: 600; line-height: 1.1; font-variant-numeric: lining-nums tabular-nums; }
@@ -102,8 +96,6 @@
 .nw-sum { font-size: 18px; color: var(--text); }
 .nw-bar { height: 14px; background: var(--track); border-radius: 99px; overflow: hidden; margin-bottom: 6px; }
 .nw-bar > span { display: block; height: 100%; border-radius: 99px; }
-.nw-list { margin-top: 14px; }
-.nw-list li { padding: 8px 0; }
 
 /* ---------- Mobil ---------- */
 @media (max-width: 760px) {
@@ -115,5 +107,4 @@
   .goal-figs { grid-template-columns: repeat(2, minmax(0, 1fr)); }
   .acc-detail { padding-left: 0; }
   .nw-hero-value { font-size: 32px; }
-  .nw-actions .btn { width: 100%; }
 }

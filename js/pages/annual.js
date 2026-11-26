@@ -6,8 +6,9 @@
 
   App.page({
     id: 'arsbudget',
+    group: 'budget',
+    tab: 'År',
     title: 'Årsbudget',
-    overline: 'Årsbudget',
     heading: 'Årsbudget',
     icon: 'bars',
 

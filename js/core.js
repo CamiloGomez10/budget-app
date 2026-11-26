@@ -104,7 +104,6 @@ const App = (() => {
       // Saldo = original + adjust − kopplade transaktioner (debtId, eller en kategori i categories).
       debts: [],                   // { id, name, original, adjust, categories: [], apr, installment, extra, payDay, start, end, notes }
       snapshots: [],               // används inte längre (historiken räknas fram), finns kvar för gammal data
-      noSpend: {},                 // manuella ändringar av köpfria dagar: { "2026-11-03": true|false }
       paycheck: { start: iso(new Date(now.getFullYear(), now.getMonth(), 1)), end: iso(new Date(now.getFullYear(), now.getMonth() + 1, 0)), income: 0, alloc: {} },
       strategy: 'snowball',
     };
@@ -132,6 +131,7 @@ const App = (() => {
     const out = { ...emptyState(), ...s, settings: { ...emptyState().settings, ...s.settings } };
     delete out.settings.currency; // appen visar alltid svenska kronor
     delete out.forecast;          // sidan Sparprognos är borttagen
+    delete out.noSpend;           // sidan Köpfri utmaning är borttagen
     // Äldre data utan inkomstkategorier: hämta dem från befintliga inkomster
     if (!Array.isArray(s.incomeCategories)) {
       const names = [...new Set((s.transactions || []).filter(t => t.type === 'income').map(t => t.category).filter(Boolean))];
@@ -984,35 +984,67 @@ const App = (() => {
   const PAGES = [];
   let current = null;
 
+  // Sidor med samma grupp visas som ett menyval med flikar högst upp
+  const GROUPS = {
+    oversikt: { title: 'Översikt', icon: 'home' },
+    budget: { title: 'Budget', icon: 'calendar' },
+    mal: { title: 'Mål', icon: 'target' },
+    formogenhet: { title: 'Förmögenhet', icon: 'chart' },
+  };
+  // Gamla adresser (sidor som slagits ihop) leder till sin nya plats
+  const ALIASES = {
+    lon: 'manadsbudget', '503020': 'manadsbudget', kopfritt: 'oversikt',
+    konton: 'formogenhet', nettoformogenhet: 'formogenhet',
+  };
+  const lastTab = {}; // senast visade flik per grupp
+
   function page(def) { PAGES.push(def); }
 
-  function navHTML(activeId) {
-    return PAGES.map(p =>
-      `<a href="#/${p.id}" ${p.id === activeId ? 'aria-current="page"' : ''}>${icon(p.icon)}<span>${p.title}</span></a>`
-    ).join('');
+  function navHTML(active) {
+    const seen = new Set();
+    return PAGES.map(p => {
+      if (p.group) {
+        if (seen.has(p.group)) return '';
+        seen.add(p.group);
+        const g = GROUPS[p.group];
+        const target = lastTab[p.group] || p.id;
+        return `<a href="#/${target}" ${active.group === p.group ? 'aria-current="page"' : ''}>${icon(g.icon)}<span>${g.title}</span></a>`;
+      }
+      return `<a href="#/${p.id}" ${p.id === active.id ? 'aria-current="page"' : ''}>${icon(p.icon)}<span>${p.title}</span></a>`;
+    }).join('');
   }
 
+  function tabsHTML(p) {
+    if (!p.group) return '';
+    const tabs = PAGES.filter(x => x.group === p.group);
+    return `<nav class="page-tabs" aria-label="${esc(GROUPS[p.group].title)}">${tabs.map(t =>
+      `<a href="#/${t.id}" class="page-tab" ${t === p ? 'aria-current="page"' : ''}>${esc(t.tab || t.title)}</a>`).join('')}</nav>`;
+  }
   function topbarHTML(p) {
     return `<div class="page-top">
       <div>
-        <p class="overline">${esc(p.overline || p.title)}</p>
+        <p class="overline">${esc(p.group ? GROUPS[p.group].title : (p.overline || p.title))}</p>
         <h1 class="page-title">${esc(p.heading || p.title)}</h1>
       </div>
       <div class="page-actions">
         <button class="btn btn-primary" id="addTxBtn">${icon('plus', 14)} Lägg till transaktion</button>
       </div>
     </div>
+    ${tabsHTML(p)}
 `;
   }
 
   function render() {
     hideTooltip();
-    const id = location.hash.replace(/^#\/?/, '').split('?')[0] || PAGES[0].id;
+    const raw = location.hash.replace(/^#\/?/, '').split('?')[0] || PAGES[0].id;
+    if (ALIASES[raw]) { history.replaceState(null, '', `#/${ALIASES[raw]}`); }
+    const id = ALIASES[raw] || raw;
     const p = PAGES.find(x => x.id === id) || PAGES[0];
+    if (p.group) lastTab[p.group] = p.id;
     const changed = current !== p;
     current = p;
-    document.getElementById('nav').innerHTML = navHTML(p.id);
-    document.title = `${p.title} – Budget`;
+    document.getElementById('nav').innerHTML = navHTML(p);
+    document.title = `${p.group ? `${GROUPS[p.group].title} · ${p.tab || p.title}` : p.title} – Budget`;
     const root = document.getElementById('page');
     const scrollY = window.scrollY;
     let body;

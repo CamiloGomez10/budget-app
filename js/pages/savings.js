@@ -47,8 +47,9 @@
 
   App.page({
     id: 'sparande',
+    group: 'mal',
+    tab: 'Sparmål',
     title: 'Sparande & buffertar',
-    overline: 'Sparande',
     icon: 'piggy',
 
     render(s) {

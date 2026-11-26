@@ -59,8 +59,9 @@
 
   App.page({
     id: 'skulder',
+    group: 'mal',
+    tab: 'Skulder',
     title: 'Skuldavbetalning',
-    overline: 'Skulder',
     icon: 'coins',
 
     render(s) {

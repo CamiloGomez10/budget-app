@@ -183,7 +183,7 @@
 
       const parentsCard = ui.card({
         overline: 'Huvudkategorier', title: 'Struktur',
-        body: `<p class="muted set-gap">Typen styr hur kategorierna räknas i hela appen: <b>Sparande</b> kan fylla sparkonton och sparmål, <b>Fasta kostnader</b> räknas inte som köp i Köpfri utmaning. Ordningen är den ordning budgeten visas i.</p>
+        body: `<p class="muted set-gap">Typen styr hur kategorierna räknas i hela appen: <b>Sparande</b> kan fylla sparkonton och sparmål, <b>Fasta kostnader</b> är det som kommer varje månad. Ordningen är den ordning budgeten visas i.</p>
           ${parentRows(s)}
           <form class="set-add set-add-parent" id="parentForm">
             ${ui.field('Ny huvudkategori', '<input name="name" required maxlength="30" placeholder="t.ex. Barn">')}
@@ -196,7 +196,7 @@
       const categories = ui.card({
         overline: 'Kategorier', title: 'Ditt utgiftssystem',
         body: `${parentSections(s, used)}
-          <p class="muted set-gap">Tryck på en kategori för att byta namn, huvudkategori eller grupp, eller för att märka den som <b>skuldbetalning</b>. Gruppen (Behov/Nöje/Framtid) styr 50/30/20-planeringen. Pilen visar vart pengarna går (kopplas under Konton, Sparande och Skulder). Tar du bort en kategori som har transaktioner får du först välja vart de ska flyttas.</p>
+          <p class="muted set-gap">Tryck på en kategori för att byta namn, huvudkategori eller grupp, eller för att märka den som <b>skuldbetalning</b>. Gruppen (Behov/Nöje/Framtid) styr 50/30/20 under Budget. Pilen visar vart pengarna går (kopplas under Förmögenhet och Mål). Tar du bort en kategori som har transaktioner får du först välja vart de ska flyttas.</p>
           <form class="set-add" id="catForm">
             ${ui.field('Kategorinamn', '<input name="name" required maxlength="30" placeholder="t.ex. Husdjur">')}
             ${ui.field('Huvudkategori', `<select name="parent">${parentOptions(s, s.parents[0])}<option value="__income">Inkomster</option></select>`)}
@@ -290,7 +290,7 @@
             ${ui.field('Huvudkategori', `<select name="parent">${parentOptions(s, c.parent)}</select>`)}
             ${ui.field('Grupp (50/30/20)', `<select name="group">${opt(GROUPS, c.group)}</select>`)}
             <label class="check"><input type="checkbox" name="debt" ${c.debt ? 'checked' : ''}> Skuldbetalning (t.ex. Klarna, Walley, lån)</label>
-            <p class="muted">Skuldbetalningar kan kopplas till en skuld under Skuldavbetalning. Byter du namn uppdateras alla transaktioner, budgetar och kopplingar.</p>`}
+            <p class="muted">Skuldbetalningar kan kopplas till en skuld under Mål › Skulder. Byter du namn uppdateras alla transaktioner, budgetar och kopplingar.</p>`}
             <p class="set-error" id="catEditError" role="alert"></p>`,
           onSubmit(f) {
             const next = String(f.get('name')).trim();

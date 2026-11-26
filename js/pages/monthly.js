@@ -1,19 +1,32 @@
-// Månadsbudget – organisera inkomster och utgifter månad för månad.
+// Budget › Månad – fördela periodens inkomst och följ utfallet. Samlar det som förut
+// var Månadsbudget, Lönplanering och 50/30/20: allt läser och skriver samma budget.
 // Tabellen är uppdelad per huvudkategori (Inkomster först). Inom varje
 // huvudkategori sorteras underkategorierna efter budgetbelopp, störst först.
 (() => {
-  const { fmt, calc, ui, charts, esc, sum, pad2, COLORS } = App;
-  // Startar på aktuell budgetperiod (lönemånad eller kalendermånad). Sätts först när
-  // datan är inläst, eftersom inställningen avgör vilken period som gäller idag.
-  let year = null;
-  let month = null;
-  const init = () => {
-    if (year !== null) return;
-    const k = App.period.current();
-    year = Number(k.slice(0, 4));
-    month = Number(k.slice(5)) - 1;
-  };
-  const keyOf = () => { init(); return `${year}-${pad2(month + 1)}`; };
+  const { fmt, calc, ui, charts, esc, sum, COLORS } = App;
+  let offset = 0; // 0 = innevarande period, -1 = förra, +1 = nästa
+  const keyOf = () => App.addMonths(App.period.current(), offset);
+
+  // ---------- 50/30/20 ----------
+  const SPLIT = [
+    { id: 'needs', label: 'Behov', color: '#9a4a22', def: 50 },
+    { id: 'wants', label: 'Nöje', color: '#00897a', def: 30 },
+    { id: 'future', label: 'Framtid & sparande', color: '#d08a1c', def: 20 },
+  ];
+  function splitPct(s) {
+    const sp = (s.settings && s.settings.split) || {};
+    return Object.fromEntries(SPLIT.map(g => [g.id, Number.isFinite(Number(sp[g.id])) ? Number(sp[g.id]) : g.def]));
+  }
+  function splitRows(s, key) {
+    const income = calc.monthTotals(key).income || calc.plannedIncome(key);
+    const actual = { needs: 0, wants: 0, future: 0 };
+    for (const [name, amount] of Object.entries(calc.byCategory(calc.txInMonth(key)))) {
+      const c = s.categories.find(x => x.name === name);
+      actual[c && actual[c.group] !== undefined ? c.group : 'needs'] += amount;
+    }
+    const pct = splitPct(s);
+    return { income, rows: SPLIT.map(g => ({ ...g, pct: pct[g.id], target: income * pct[g.id] / 100, actual: actual[g.id] })) };
+  }
 
   // Skillnad: för inkomster är mer än planerat bra, för utgifter är mindre bra
   const diffOf = (kind, planned, actual) => (kind === 'income' ? actual - planned : planned - actual);
@@ -51,20 +64,37 @@
 
   App.page({
     id: 'manadsbudget',
+    group: 'budget',
+    tab: 'Månad',
     title: 'Månadsbudget',
-    overline: 'Månadsbudget',
     heading: 'Månadsbudget',
     icon: 'calendar',
 
     render(s) {
       const key = keyOf();
+      const r = App.period.range(key);
       const groups = calc.grouped(key);
       const expenseGroups = groups.filter(g => g.kind === 'expense');
       const income = groups.find(g => g.kind === 'income');
-      const incPlanned = income ? sum(income.items.map(r => r.planned)) : 0;
-      const incActual = income ? sum(income.items.map(r => r.actual)) : 0;
-      const expPlanned = sum(expenseGroups.flatMap(g => g.items.map(r => r.planned)));
-      const expActual = sum(expenseGroups.flatMap(g => g.items.map(r => r.actual)));
+      const incPlanned = income ? sum(income.items.map(x => x.planned)) : 0;
+      const incActual = income ? sum(income.items.map(x => x.actual)) : 0;
+      const expPlanned = sum(expenseGroups.flatMap(g => g.items.map(x => x.planned)));
+      const expActual = sum(expenseGroups.flatMap(g => g.items.map(x => x.actual)));
+      const toAllocate = incPlanned - expPlanned;
+
+      const head = `<div class="mon-head">
+          <div class="pay-period">
+            <button class="btn btn-small" data-move="-1" aria-label="Förra perioden">←</button>
+            <div><b>${fmt.cap(fmt.month(key))}</b><p class="muted">${fmt.date(r.start)} – ${fmt.date(r.end)}</p></div>
+            <button class="btn btn-small" data-move="1" aria-label="Nästa period">→</button>
+          </div>
+          ${offset !== 0 ? '<button class="link-btn" data-move="0">Till denna period</button>' : ''}
+        </div>
+        ${ui.strip([
+          { label: 'Förväntad inkomst', value: fmt.money(incPlanned), hint: `Har kommit in: ${fmt.money(incActual)}` },
+          { label: 'Kvar att fördela', value: `<span class="${toAllocate < 0 ? 'neg' : ''}">${fmt.money(toAllocate)}</span>`, hint: toAllocate < 0 ? 'Du har budgeterat mer än inkomsten' : toAllocate > 0 ? 'Ge varje krona en uppgift' : 'Hela inkomsten är fördelad' },
+          { label: 'Kvar efter utgifter', value: `<span class="${incActual - expActual < 0 ? 'neg' : ''}">${fmt.money(incActual - expActual)}</span>`, hint: `Utgifter hittills: ${fmt.money(expActual)}` },
+        ])}`;
 
       const table = `
         <div class="mon-table-wrap">
@@ -79,29 +109,47 @@
           </table>
         </div>`;
 
-      return `
-        <div class="ann-toolbar">
-          ${ui.field('År', `<select id="monYear">${ui.yearOptions(year)}</select>`)}
-        </div>
-        ${ui.card({
-          overline: 'Utfall per kategori',
-          title: 'Planerat mot faktiskt',
-          right: `${ui.legend([{ name: 'Planerat', color: COLORS.planned }, { name: 'Faktiskt', color: COLORS.actual }])}
-            <label class="select-pill"><span class="sr-only">Månad</span><select id="monMonth">${ui.monthOptions(month)}</select></label>`,
-          body: `<div class="chart" id="monChart"></div>
-            ${ui.tableView(['Huvudkategori', 'Planerat', 'Faktiskt'], expenseGroups.map(g => [esc(g.name), fmt.money0(sum(g.items.map(r => r.planned))), fmt.money0(sum(g.items.map(r => r.actual)))]))}`,
-        })}
-        ${ui.card({
-          overline: 'Månadsplan',
-          title: `Budget för ${fmt.monthName(month)}${App.period.isPayday() ? ` <span class="muted" style="font-family:var(--sans);font-size:13px">${App.period.rangeLabel(key)}</span>` : ''}`,
-          right: s.budgets[key] ? '' : '<span>Använder standardbudgeten tills du ändrar något</span>',
-          body: table,
-        })}`;
+      const plan = ui.card({
+        overline: 'Fördela inkomsten',
+        title: 'Budget per kategori',
+        right: s.budgets[key] ? '' : '<span>Använder standardbudgeten tills du ändrar något</span>',
+        body: table,
+      });
+
+      const chart = ui.card({
+        overline: 'Utfall per huvudkategori',
+        title: 'Planerat mot faktiskt',
+        right: ui.legend([{ name: 'Planerat', color: COLORS.planned }, { name: 'Faktiskt', color: COLORS.actual }]),
+        body: `<div class="chart" id="monChart"></div>
+          ${ui.tableView(['Huvudkategori', 'Planerat', 'Faktiskt'], expenseGroups.map(g => [esc(g.name), fmt.money0(sum(g.items.map(x => x.planned))), fmt.money0(sum(g.items.map(x => x.actual)))]))}`,
+      });
+
+      const sp = splitRows(s, key);
+      const pctSum = sum(sp.rows.map(g => g.pct));
+      const split = ui.card({
+        overline: '50/30/20',
+        title: 'Behov, nöje och framtid',
+        body: `<ul class="split-list">${sp.rows.map(g => {
+            const share = g.target > 0 ? g.actual / g.target : 0;
+            const left = g.target - g.actual;
+            return `<li>
+              <div class="split-line"><span class="swatch" style="background:${g.color}"></span><b>${esc(g.label)}</b>
+                <span class="split-pct"><input type="number" min="0" max="100" step="1" inputmode="numeric" data-group="${g.id}" value="${g.pct}" aria-label="Målprocent för ${esc(g.label)}"> %</span></div>
+              ${ui.progress(share, g.color)}
+              <p class="muted">${fmt.money(g.actual)} av ${fmt.money(g.target)} · <span class="${left < 0 ? 'neg' : ''}">${left >= 0 ? 'kvar' : 'över'} ${fmt.money(Math.abs(left))}</span></p>
+            </li>`;
+          }).join('')}</ul>
+          ${pctSum !== 100 ? `<p class="neg split-warn">Procenten blir ${fmt.num(pctSum)} % tillsammans. Justera så att summan blir 100 %.</p>` : ''}
+          <p class="muted split-help">Räknas på ${calc.monthTotals(key).income ? 'periodens inkomster' : 'den förväntade inkomsten'} (${fmt.money(sp.income)}). Vilken grupp en kategori hör till ändrar du under Inställningar.</p>`,
+      });
+
+      return `${head}${plan}<div class="grid-2">${split}${chart}</div>`;
     },
 
-    mount(root) {
+    mount(root, s) {
+      const key = keyOf();
       // Diagrammet visar huvudkategorierna för utgifter (underkategorierna syns i tabellen)
-      const groups = calc.grouped(keyOf()).filter(g => g.kind === 'expense');
+      const groups = calc.grouped(key).filter(g => g.kind === 'expense');
       charts.bars(root.querySelector('#monChart'), {
         label: 'Planerat och faktiskt per huvudkategori',
         labels: groups.map(g => g.name),
@@ -111,16 +159,25 @@
           { name: 'Faktiskt', color: COLORS.actual, values: groups.map(g => sum(g.items.map(r => r.actual))) },
         ],
       });
-      root.querySelector('#monYear').addEventListener('change', e => { year = Number(e.target.value); App.render(); });
-      root.querySelector('#monMonth').addEventListener('change', e => { month = Number(e.target.value); App.render(); });
+      root.querySelectorAll('[data-move]').forEach(b => b.addEventListener('click', () => {
+        const mv = Number(b.dataset.move);
+        offset = mv === 0 ? 0 : offset + mv;
+        App.render();
+      }));
+      // Första ändringen i en period kopierar standardbudgeten till perioden
       root.querySelectorAll('.mon-input').forEach(input => {
         input.addEventListener('change', () => {
-          const key = keyOf();
           const value = Math.max(0, Number(input.value) || 0);
           App.update(st => {
             if (!st.budgets[key]) st.budgets[key] = { ...calc.planned(key) };
             st.budgets[key][input.dataset.cat] = value;
           });
+        });
+      });
+      root.querySelectorAll('input[data-group]').forEach(inp => {
+        inp.addEventListener('change', () => {
+          const v = App.clamp(Math.round(Number(inp.value) || 0), 0, 100);
+          App.update(st => { st.settings.split = { ...splitPct(st), [inp.dataset.group]: v }; });
         });
       });
     },

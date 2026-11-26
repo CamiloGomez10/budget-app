@@ -483,3 +483,11 @@ details.table-view th:first-child, details.table-view td:first-child { text-alig
   .hero { min-height: 190px; padding: 22px; }
   .hero-text h2 { font-size: 27px; }
 }
+
+/* Flikar för sidor som hör ihop (t.ex. Budget: Månad / År) */
+.page-tabs { display: inline-flex; gap: 2px; background: var(--tan-2); border-radius: 12px; padding: 4px; margin: -4px 0 18px; max-width: 100%; overflow-x: auto; }
+.page-tab { padding: 7px 16px; border-radius: 9px; font-weight: 500; font-size: 14px; color: var(--muted); text-decoration: none; white-space: nowrap; }
+.page-tab:hover { color: var(--text); }
+.page-tab[aria-current="page"] { background: var(--dark); color: var(--white); }
+.page-tab:focus-visible { outline: 2px solid var(--caramel); outline-offset: 2px; }
+.stack { display: flex; flex-direction: column; gap: 18px; min-width: 0; }

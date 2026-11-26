@@ -1,21 +1,16 @@
-// Konton – saldot räknas fram: startsaldo + alla transaktioner på kontot.
-// Utgifter i en sparkategori som är kopplad till ett konto flyttar pengarna dit.
+// Förmögenhet – nettoförmögenheten (tillgångar minus skulder) och alla konton på ett ställe.
+// Saldot räknas fram: startsaldo + alla transaktioner på kontot. Utgifter i en
+// sparkategori som är kopplad till ett konto flyttar pengarna dit.
 (() => {
-  const { fmt, calc, ui, charts, esc, uid, iso, today, CATEGORY_COLORS } = App;
+  const { fmt, calc, ui, charts, esc, uid, iso, today } = App;
 
   const TYPES = { checking: 'Lönekonto', savings: 'Sparkonto', investment: 'Investering' };
   const TYPE_COLOR = { checking: 'var(--dark)', savings: 'var(--caramel)', investment: 'var(--rose)' };
   const open = new Set();   // vilka konton som är utfällda (överlever omritning)
 
-  // Ringdiagrammets delar: färger i fast ordning, fler än 7 konton slås ihop till "Övrigt".
-  function donutItems(accounts) {
-    const pos = accounts.filter(a => a.balance > 0);
-    const items = pos.slice(0, 7).map((a, i) => ({ name: a.name, color: CATEGORY_COLORS[i], value: a.balance }));
-    const rest = pos.slice(7);
-    if (rest.length) items.push({ name: 'Övrigt', color: '#8b8178', value: App.sum(rest.map(a => a.balance)) });
-    return items;
-  }
-
+  // Historik räknas fram från konton och skulder vid slutet av varje budgetperiod
+  const history = () => calc.netWorthSeries(calc.historyKeys(12));
+  const shortLabel = key => `${fmt.monthShort(Number(key.slice(5)) - 1)} ${key.slice(2, 4)}`;
   // Kategorier som kan kopplas till ett konto: typen Sparande, plus de som redan är kopplade
   function savingCategories(s) {
     const linked = new Set(s.accounts.flatMap(a => a.categories || []));
@@ -82,10 +77,10 @@
   }
 
   App.page({
-    id: 'konton',
-    title: 'Konton',
-    overline: 'Konton',
-    icon: 'card',
+    id: 'formogenhet',
+    title: 'Förmögenhet',
+    heading: 'Förmögenhet',
+    icon: 'chart',
 
     render(s) {
       const accounts = calc.accounts();
@@ -93,28 +88,35 @@
       const def = calc.defaultAccount();
       const cats = savingCategories(s);
       const assets = calc.assets();
-      const items = donutItems(accounts);
+      const liab = calc.totalDebt();
       const noAccount = s.transactions.filter(t => !t.accountId).length;
 
-      const info = ui.note(`<b>Saldot räknas fram av sig självt</b>Saldo = startsaldo + alla transaktioner på kontot. Transaktioner utan konto räknas på standardkontot${def ? ` (${esc(def.name)})` : ''}${noAccount ? ` – just nu ${fmt.num(noAccount)} st` : ''}. Stämmer det inte med banken, tryck på kontot och använd ”Stäm av”, så rättar appen startsaldot.`);
-
-      const dist = ui.card({
-        overline: 'Fördelning av saldon', title: 'Var dina tillgångar finns',
-        right: `<span>Totala tillgångar <b class="amount acc-total">${fmt.money(assets)}</b></span>`,
-        body: items.length
-          ? `<div class="donut-wrap"><div id="accDonut"></div>${charts.donutLegend(items)}</div>`
-          : ui.empty('Inga tillgångar ännu', 'Lägg till ett konto, så räknas saldot fram från dina transaktioner.'),
-      });
+      const hero = `<section class="nw-hero">
+        <p class="overline">Nettoförmögenhet</p>
+        <p class="nw-hero-value">${fmt.money(calc.netWorth())}</p>
+        <p class="nw-hero-sub">Tillgångar ${fmt.money(assets)} − skulder ${fmt.money(liab)}. Räknas fram av sig självt vid slutet av varje budgetmånad.</p>
+        <div class="chart" id="nwHeroChart"></div>
+      </section>`;
 
       const list = ui.card({
-        overline: 'Konto', title: 'Dina konton',
-        right: `<span>${accounts.length} aktiva</span>`,
+        overline: 'Det du äger', title: 'Konton',
+        right: `<b class="amount nw-sum">${fmt.money(assets)}</b>`,
         body: accounts.length
           ? `<ul class="rows acc-list">${accounts.map(a => accountRow(s, a, def, cats)).join('')}</ul>
-             <p class="muted acc-help">Tryck på ett konto för att stämma av, ändra eller koppla sparkategorier.</p>`
+             <p class="muted acc-help">Saldo = startsaldo + alla transaktioner på kontot. Transaktioner utan konto räknas på standardkontot${def ? ` (${esc(def.name)})` : ''}${noAccount ? `, just nu ${fmt.num(noAccount)} st` : ''}. Tryck på ett konto för att stämma av mot banken, ändra eller koppla sparkategorier.</p>`
           : ui.empty('Inga konton ännu', 'Lägg till ditt första konto i formuläret.'),
       });
 
+      const liabRows = [
+        ...calc.debts().filter(d => d.balance > 0).map(d => ({ name: d.name, value: d.balance })),
+        ...accounts.filter(a => a.balance < 0).map(a => ({ name: a.name, value: -a.balance })),
+      ];
+      const debtsCard = ui.card({
+        overline: 'Det du är skyldig', title: 'Skulder',
+        right: `<b class="amount nw-sum">${fmt.money(liab)}</b>`,
+        body: `${liabRows.length ? `<ul class="rows">${liabRows.map(l => `<li><span style="flex:1">${esc(l.name)}</span><b>${fmt.money(l.value)}</b></li>`).join('')}</ul>` : '<p class="muted">Inga skulder. Snyggt!</p>'}
+          <p class="muted acc-help"><a class="link" href="#/skulder">Hantera skulder under Mål</a></p>`,
+      });
       const add = ui.card({
         overline: 'Skapa', title: 'Lägg till konto',
         body: `<form id="accForm" class="form-stack">
@@ -133,16 +135,16 @@
             <button class="btn btn-secondary btn-small" data-restore="${a.id}">Återställ</button></li>`).join('')}</ul>`,
       }) : '';
 
-      return `${info}${dist}<div class="grid-2-1">${list}<div>${add}${arch}</div></div>`;
+      return `${hero}<div class="grid-2-1">${list}<div class="stack">${debtsCard}${add}${arch}</div></div>`;
     },
 
     mount(root) {
-      const assets = calc.assets();
-      charts.donut(root.querySelector('#accDonut'), {
-        items: donutItems(calc.accounts()), size: 190, label: 'Tillgångar per konto',
-        center: { label: 'Totalt', value: fmt.money0(assets) },
+      const rows = history();
+      charts.bars(root.querySelector('#nwHeroChart'), {
+        label: 'Nettoförmögenhet per månad', labels: rows.map(r => shortLabel(r.key)),
+        tooltipLabels: rows.map(r => fmt.cap(fmt.month(r.key))), wide: true, onDark: true, highlightLast: true, height: 170,
+        series: [{ name: 'Nettoförmögenhet', color: '#b9a48c', highlight: '#fffaf2', values: rows.map(r => Math.max(0, r.value)) }],
       });
-
       const edit = (id, fn) => App.update(st => { const a = st.accounts.find(x => x.id === id); if (a) fn(a, st); });
 
       root.querySelectorAll('details[data-acc]').forEach(d => d.addEventListener('toggle', () => {

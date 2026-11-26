@@ -1,11 +1,13 @@
-// Översikt – din ekonomi i en överblick.
+// Översikt › Denna period – det viktigaste just nu: vad som finns kvar, vad som
+// behöver ses över, kommande räkningar och hur målen går. Trender finns i fliken bredvid.
 (() => {
-  const { fmt, calc, ui, charts, esc, sum, today, period, COLORS } = App;
+  const { fmt, calc, ui, charts, esc, today, period } = App;
 
   App.page({
     id: 'oversikt',
+    group: 'oversikt',
+    tab: 'Denna period',
     title: 'Översikt',
-    overline: 'Översikt',
     heading: 'Välkommen tillbaka.',
     icon: 'home',
 
@@ -23,7 +25,6 @@
       const avgExp = calc.avgMonthlyExpense();
       const runway = avgExp > 0 ? calc.liquid() / avgExp : null;
       const periodBills = calc.billsInRange(range.start, range.end);
-      const bills = periodBills.filter(b => !b.isPaid);
       const onTrack = t.net >= 0 && (plannedTotal === 0 || t.expense <= plannedTotal);
 
       const hero = `
@@ -53,30 +54,29 @@
           ${ui.stat({ label: 'Total inkomst', value: fmt.money(t.income), hint: rangeLabel ? `Lönemånad ${rangeLabel}` : `Registrerat i ${monthName}`, variant: 'dark' })}
           ${ui.stat({ label: 'Totala utgifter', value: fmt.money(t.expense), hint: t.income > 0 ? `${fmt.pct(t.expense / t.income)} av inkomsten` : '–' })}
           ${ui.stat({ label: 'Kvar av inkomsten', value: fmt.money(t.net), hint: 'Aktuellt saldo', variant: 'tan' })}
-          ${ui.stat({ label: 'Totalt sparat', value: fmt.money(calc.totalSaved()), hint: `${s.goals.length} ${s.goals.length === 1 ? 'mål' : 'mål'}`, variant: 'tan' })}
-          ${ui.stat({ label: 'Total skuld', value: fmt.money(calc.totalDebt()), hint: `${calc.debts().filter(d => d.balance > 0).length} aktiva` })}
-          ${ui.stat({ label: 'Nettoförmögenhet', value: fmt.money(calc.netWorth()), hint: 'Tillgångar − skulder' })}
-          ${ui.stat({ label: 'Kommande räkningar', value: fmt.money(sum(bills.map(b => b.amount))), hint: `${bills.length} planerade` })}
+          ${ui.stat({ label: 'Nettoförmögenhet', value: fmt.money(calc.netWorth()), hint: '<a class="link" href="#/formogenhet">Tillgångar − skulder</a>' })}
         </div>`;
+
+      // Saker att se över: räkningar som passerat, kategorier över budget, konton på minus
+      const todayISO = App.iso(now);
+      const plan = calc.planned(key);
+      const spent = calc.byCategory(calc.txInMonth(key));
+      const alerts = [
+        ...periodBills.filter(b => !b.isPaid && b.date < todayISO).map(b => `<b>${esc(b.name)}</b> skulle betalas ${fmt.date(b.date)} (${fmt.money0(b.amount)}). <a class="link" href="#/rakningar">Till räkningar</a>`),
+        ...s.categories.filter(c => (Number(plan[c.name]) || 0) > 0 && (spent[c.name] || 0) > Number(plan[c.name]))
+          .map(c => `<b>${esc(c.name)}</b> är ${fmt.money0(spent[c.name] - Number(plan[c.name]))} över budget.`),
+        ...calc.accounts().filter(a => a.balance < 0).map(a => `<b>${esc(a.name)}</b> är på minus (${fmt.money0(a.balance)}).`),
+      ];
+      const alertCard = alerts.length ? ui.card({
+        overline: 'Att se över', title: alerts.length === 1 ? '1 sak' : `${alerts.length} saker`,
+        body: `<ul class="dash-alerts">${alerts.map(a => `<li><span>${a}</span></li>`).join('')}</ul>`,
+      }) : '';
 
       const strip = ui.strip([
         { label: 'Sparkvot', value: t.income > 0 ? fmt.pct(remainingShare, 1) : '–' },
         { label: 'Utrymme per dag', value: fmt.money(Math.max(0, t.net) / daysLeft), hint: `${daysLeft} dagar kvar` },
         { label: 'Buffert räcker', value: runway == null ? '–' : `${fmt.num(runway, 1)} mån` },
       ]);
-
-      const year = Number(key.slice(0, 4));
-      const months = calc.yearMonths(year);
-      const cashflow = ui.card({
-        overline: 'Kassaflöde',
-        title: 'Inkomster och utgifter',
-        right: `<span>12 månader</span>${ui.legend([{ name: 'Inkomster', color: COLORS.income }, { name: 'Utgifter', color: COLORS.expense }])}`,
-        body: `<div class="chart" id="dashCashflow"></div>
-          <div style="margin-top:14px">${t.net >= 0
-            ? ui.note(`<b>Du bygger andrum.</b>${fmt.money(t.net)} finns kvar efter utgifterna i ${monthName}.`)
-            : ui.note(`<b>Utgifterna är högre än inkomsterna i ${monthName}.</b>${fmt.money(-t.net)} över hittills.`)}</div>
-          ${ui.tableView(['Månad', 'Inkomster', 'Utgifter'], months.map(m => [fmt.cap(fmt.monthName(m.index)), fmt.money0(m.income), fmt.money0(m.expense)]))}`,
-      });
 
       const byCat = calc.byCategory(calc.txInMonth(key));
       const catItems = s.categories.map(c => ({ name: c.name, color: c.color, value: byCat[c.name] || 0 }))
@@ -92,36 +92,28 @@
           })}
           ${ui.card({
             overline: 'Budget', title: 'Använd budget',
-            body: plannedTotal > 0 ? '<div id="dashBudget" class="center"></div>' : ui.empty('Ingen budget satt', 'Planera månaden under Månadsbudget.'),
+            body: plannedTotal > 0 ? '<div id="dashBudget" class="center"></div>' : ui.empty('Ingen budget satt', 'Planera månaden under Budget.'),
           })}
         </div>`;
 
-      const nwLabels = [];
-      const nwValues = [];
-      calc.netWorthSeries(calc.historyKeys(12)).forEach(x => {
-        nwLabels.push(`${fmt.monthShort(Number(x.key.slice(5)) - 1)} ${x.key.slice(2, 4)}`);
-        nwValues.push(x.value);
-      });
-      const netWorth = ui.card({
-        overline: 'Position', title: 'Nettoförmögenhet över tid',
-        right: `<span class="amount" style="font-size:20px;color:var(--text)">${fmt.money(calc.netWorth())}</span>`,
-        body: '<div class="chart" id="dashNetWorth"></div>',
-      });
-      App._dashNW = { labels: nwLabels, values: nwValues };
-
+      // Sparmål fylls på, skulder betalas av: båda visas som framsteg mot målet
+      const progressRows = [
+        ...calc.goals().map(g => ({ name: g.name, share: g.target > 0 ? g.current / g.target : 0, text: `${fmt.money(g.current)} av ${fmt.money(g.target)}`, color: 'var(--dark)' })),
+        ...calc.debts().filter(d => d.balance > 0).map(d => {
+          const start = Math.max(0, (Number(d.original) || 0) + (Number(d.adjust) || 0));
+          return { name: d.name, share: start > 0 ? d.paid / start : 0, text: `${fmt.money(d.balance)} kvar att betala`, color: 'var(--caramel)' };
+        }),
+      ];
       const goals = ui.card({
-        overline: 'Mål', title: 'Sparmål',
-        right: `<span>${s.goals.length} mål</span>`,
-        body: s.goals.length
-          ? `<ul class="rows goal-rows">${calc.goals().map(g => {
-              const share = g.target > 0 ? g.current / g.target : 0;
-              return `<li><div style="flex:1;min-width:0">
-                  <div class="goal-line"><b>${esc(g.name)}</b><span class="pct">${fmt.pct(share)}</span></div>
-                  ${ui.progress(share)}
-                  <p class="muted">${fmt.money(g.current)} av ${fmt.money(g.target)}</p>
-                </div></li>`;
-            }).join('')}</ul>`
-          : ui.empty('Inga sparmål ännu', 'Skapa ett mål under Sparande & buffertar.'),
+        overline: 'Mål', title: 'Sparmål och skulder',
+        right: '<a class="link" href="#/sparande">Alla mål</a>',
+        body: progressRows.length
+          ? `<ul class="rows goal-rows">${progressRows.map(g => `<li><div style="flex:1;min-width:0">
+                  <div class="goal-line"><b>${esc(g.name)}</b><span class="pct">${fmt.pct(g.share)}</span></div>
+                  ${ui.progress(g.share, g.color)}
+                  <p class="muted">${g.text}</p>
+                </div></li>`).join('')}</ul>`
+          : ui.empty('Inga mål ännu', 'Skapa ett sparmål eller lägg in en skuld under Mål.'),
       });
 
       const upcoming = ui.card({
@@ -136,26 +128,14 @@
                 <span class="amount" style="font-size:17px">${fmt.money0(b.amount)}</span>
               </li>`;
             }).join('')}</ul>`
-          : ui.empty('Inga räkningar denna period', 'Lägg till räkningar under Räkningar & kalender.'),
+          : ui.empty('Inga räkningar denna period', 'Lägg till räkningar under Räkningar.'),
       });
 
-      return `${hero}${summary}${stats}${strip}${cashflow}${spending}${netWorth}<div class="grid-2">${goals}${upcoming}</div>`;
+      return `${hero}${summary}${stats}${strip}${alertCard}<div class="grid-2">${upcoming}${goals}</div>${spending}`;
     },
 
     mount(root, s) {
-      const now = today();
       const key = period.current();
-      const months = calc.yearMonths(Number(key.slice(0, 4)));
-      charts.bars(root.querySelector('#dashCashflow'), {
-        label: 'Inkomster och utgifter per månad',
-        labels: months.map(m => fmt.monthShort(m.index)),
-        tooltipLabels: months.map(m => fmt.cap(fmt.monthName(m.index))),
-        series: [
-          { name: 'Inkomster', color: COLORS.income, values: months.map(m => m.income) },
-          { name: 'Utgifter', color: COLORS.expense, values: months.map(m => m.expense) },
-        ],
-      });
-
       const byCat = calc.byCategory(calc.txInMonth(key));
       const items = s.categories.map(c => ({ name: c.name, color: c.color, value: byCat[c.name] || 0 }))
         .concat(Object.keys(byCat).filter(n => !s.categories.some(c => c.name === n)).map(n => ({ name: n, color: '#8b8178', value: byCat[n] })));
@@ -167,15 +147,7 @@
       charts.ring(root.querySelector('#dashBudget'), {
         share, size: 180, color: share > 1 ? 'var(--rose)' : 'var(--dark)',
         center: { value: fmt.pct(share), label: 'Använt', sub: share <= 1 ? `Kvar ${fmt.money0(planned - t.expense)}` : `Över ${fmt.money0(t.expense - planned)}` },
-      });
-
-      const nw = App._dashNW;
-      charts.bars(root.querySelector('#dashNetWorth'), {
-        label: 'Nettoförmögenhet per månad', labels: nw.labels, wide: true, plotBg: 'var(--plot-bg)',
-        series: [{ name: 'Nettoförmögenhet', color: COLORS.dark, values: nw.values }],
-      });
-
-      // Byt hero-foto: skalas ner så att det får plats i localStorage
+      });      // Byt hero-foto: skalas ner så att det får plats i localStorage
       const input = root.querySelector('#heroInput');
       input.addEventListener('change', () => {
         const file = input.files[0];

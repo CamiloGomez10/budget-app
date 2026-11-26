@@ -57,7 +57,8 @@
 
   App.page({
     id: 'rakningar',
-    title: 'Räkningar & kalender',
+    title: 'Räkningar',
+    heading: 'Räkningar & kalender',
     overline: 'Räkningar',
     icon: 'bill',
 
