@@ -99,3 +99,8 @@
 .mon-share-parts label { display: flex; flex-direction: column; gap: 2px; min-width: 0; }
 .mon-share-parts label > span:first-child { font-size: 11px; color: var(--muted); }
 .mon-share-parts .input-money input { font-size: 13px; }
+
+/* Flytta kategorier i budgeten */
+.mon-move { float: right; display: inline-flex; gap: 2px; margin-left: 6px; }
+.mon-move .icon-btn { padding: 4px; }
+.mon-move .icon-btn:disabled { opacity: 0.25; cursor: default; background: transparent; }

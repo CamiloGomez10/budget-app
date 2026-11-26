@@ -359,7 +359,8 @@ const App = (() => {
       const list = calc.txInMonth(key);
       const spent = calc.byCategory(list);
       const earned = calc.incomeByCategory(list);
-      const sortItems = items => items.sort((a, b) => b.planned - a.planned || b.actual - a.actual || a.name.localeCompare(b.name, 'sv'));
+      // Kategorierna visas i den ordning du själv har valt (flyttas med pilarna i Budget)
+      const sortItems = items => items;
       const withNums = (c, actualMap) => ({ ...c, planned: Number(planned[c.name]) || 0, actual: actualMap[c.name] || 0 });
 
       const groups = [{ name: state.incomeLabel || 'Inkomster', kind: 'income', items: sortItems(state.incomeCategories.map(c => withNums(c, earned))) }];
@@ -1085,6 +1086,22 @@ const App = (() => {
       Object.values(s.sharedTotals || {}).forEach(swapKeys);
     });
   }
+  // Flytta en kategori upp (-1) eller ner (+1) bland kategorierna i samma huvudkategori
+  function moveCategory(name, dir, income = false) {
+    update(s => {
+      const list = income ? s.incomeCategories : s.categories;
+      const i = list.findIndex(c => c.name === name);
+      if (i < 0) return;
+      const parents = s.parents || [];
+      const groupOf = c => (income ? '' : (c.parent && parents.includes(c.parent) ? c.parent : OTHER_PARENT));
+      const g = groupOf(list[i]);
+      let j = i + dir;
+      while (j >= 0 && j < list.length && groupOf(list[j]) !== g) j += dir;
+      if (j < 0 || j >= list.length) return;
+      [list[i], list[j]] = [list[j], list[i]];
+    });
+  }
+
   function renameParent(oldName, newName) {
     update(s => {
       s.parents = s.parents.map(p => (p === oldName ? newName : p));
@@ -1212,7 +1229,7 @@ const App = (() => {
     get mode() { return mode; },
     get storageKeys() { return KEYS; },
     COLORS, CATEGORY_COLORS, OTHER_PARENT, PARENT_TYPES,
-    renameCategory, renameParent,
+    renameCategory, renameParent, moveCategory,
     uid, esc, iso, ym, parseISO, today, daysInMonth, addMonths, sum, clamp, pad2,
     fmt, calc, ui, charts, period, categoryColor,
     openTransactionDialog, confirm: confirmDialog, bindTooltip, tipRow,

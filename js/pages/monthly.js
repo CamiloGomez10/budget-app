@@ -1,7 +1,7 @@
 // Budget › Månad – fördela periodens inkomst och följ utfallet. Samlar det som förut
 // var Månadsbudget, Lönplanering och 50/30/20: allt läser och skriver samma budget.
-// Tabellen är uppdelad per huvudkategori (Inkomster först). Inom varje
-// huvudkategori sorteras underkategorierna efter budgetbelopp, störst först.
+// Tabellen är uppdelad per huvudkategori (Inkomster först). Inom varje huvudkategori
+// visas underkategorierna i den ordning du väljer med pilarna.
 (() => {
   const { fmt, calc, ui, charts, esc, sum, COLORS } = App;
   let offset = 0; // 0 = innevarande period, -1 = förra, +1 = nästa
@@ -31,7 +31,7 @@
   // Skillnad: för inkomster är mer än planerat bra, för utgifter är mindre bra
   const diffOf = (kind, planned, actual) => (kind === 'income' ? actual - planned : planned - actual);
 
-  function rowHTML(r, kind, key) {
+  function rowHTML(r, kind, key, i, len) {
     const share = r.planned > 0 ? r.actual / r.planned : 0;
     const diff = diffOf(kind, r.planned, r.actual);
     const color = kind === 'income' ? 'var(--dark)' : r.color;
@@ -52,6 +52,10 @@
     }
     return `<tr class="mon-row">
       <td>
+        <span class="mon-move">
+          <button type="button" class="icon-btn" data-cat-move="${n}" data-dir="-1" data-kind="${kind}" ${i === 0 ? 'disabled' : ''} aria-label="Flytta ${n} upp">${ui.icon('up', 12)}</button>
+          <button type="button" class="icon-btn" data-cat-move="${n}" data-dir="1" data-kind="${kind}" ${i === len - 1 ? 'disabled' : ''} aria-label="Flytta ${n} ner">${ui.icon('down', 12)}</button>
+        </span>
         <b>${n}</b>${shared ? ` ${ui.pill('Delad', 'soft')}` : ''}
         <p class="muted">${fmt.money(r.actual)} av ${fmt.money(r.planned)}${r.planned > 0 ? ` · ${fmt.pct(share)}` : ''}</p>
         ${ui.progress(share, color)}
@@ -73,7 +77,7 @@
         <td class="mon-num">${fmt.money(actual)}</td>
         <td class="mon-num"><span class="${diff < 0 ? 'neg' : ''}">${fmt.money(diff)}</span></td>
       </tr>
-      ${g.items.map(r => rowHTML(r, g.kind, key)).join('')}
+      ${g.items.map((r, i) => rowHTML(r, g.kind, key, i, g.items.length)).join('')}
     </tbody>`;
   }
 
@@ -195,6 +199,10 @@
         }
         if (!st.sharedTotals[key]) st.sharedTotals[key] = {};
       };
+      // Ändra ordning på kategorierna
+      root.querySelectorAll('[data-cat-move]').forEach(b => b.addEventListener('click', () => {
+        App.moveCategory(b.dataset.catMove, Number(b.dataset.dir), b.dataset.kind === 'income');
+      }));
       root.querySelectorAll('.mon-input').forEach(input => {
         input.addEventListener('change', () => {
           const value = Math.max(0, Number(input.value) || 0);
