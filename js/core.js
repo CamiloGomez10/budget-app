@@ -1102,6 +1102,17 @@ const App = (() => {
     });
   }
 
+  // Spara en ny ordning för kategorierna i en grupp (efter dra och släpp i Budget)
+  function setCategoryOrder(names, income = false) {
+    update(s => {
+      const list = income ? s.incomeCategories : s.categories;
+      const slots = list.map((c, i) => (names.includes(c.name) ? i : -1)).filter(i => i >= 0);
+      if (slots.length !== names.length) return;
+      const byName = Object.fromEntries(list.map(c => [c.name, c]));
+      slots.forEach((pos, k) => { list[pos] = byName[names[k]]; });
+    });
+  }
+
   function renameParent(oldName, newName) {
     update(s => {
       s.parents = s.parents.map(p => (p === oldName ? newName : p));
@@ -1229,7 +1240,7 @@ const App = (() => {
     get mode() { return mode; },
     get storageKeys() { return KEYS; },
     COLORS, CATEGORY_COLORS, OTHER_PARENT, PARENT_TYPES,
-    renameCategory, renameParent, moveCategory,
+    renameCategory, renameParent, moveCategory, setCategoryOrder,
     uid, esc, iso, ym, parseISO, today, daysInMonth, addMonths, sum, clamp, pad2,
     fmt, calc, ui, charts, period, categoryColor,
     openTransactionDialog, confirm: confirmDialog, bindTooltip, tipRow,

@@ -1,7 +1,7 @@
 // Budget › Månad – fördela periodens inkomst och följ utfallet. Samlar det som förut
 // var Månadsbudget, Lönplanering och 50/30/20: allt läser och skriver samma budget.
 // Tabellen är uppdelad per huvudkategori (Inkomster först). Inom varje huvudkategori
-// visas underkategorierna i den ordning du väljer med pilarna.
+// visas underkategorierna i den ordning du väljer genom att dra dem.
 (() => {
   const { fmt, calc, ui, charts, esc, sum, COLORS } = App;
   let offset = 0; // 0 = innevarande period, -1 = förra, +1 = nästa
@@ -28,10 +28,12 @@
     return { income, rows: SPLIT.map(g => ({ ...g, pct: pct[g.id], target: income * pct[g.id] / 100, actual: actual[g.id] })) };
   }
 
+  const GRIP = '<svg viewBox="0 0 10 16" width="8" height="14" aria-hidden="true"><g fill="currentColor"><circle cx="2" cy="2" r="1.4"/><circle cx="8" cy="2" r="1.4"/><circle cx="2" cy="8" r="1.4"/><circle cx="8" cy="8" r="1.4"/><circle cx="2" cy="14" r="1.4"/><circle cx="8" cy="14" r="1.4"/></g></svg>';
+
   // Skillnad: för inkomster är mer än planerat bra, för utgifter är mindre bra
   const diffOf = (kind, planned, actual) => (kind === 'income' ? actual - planned : planned - actual);
 
-  function rowHTML(r, kind, key, i, len) {
+  function rowHTML(r, kind, key) {
     const share = r.planned > 0 ? r.actual / r.planned : 0;
     const diff = diffOf(kind, r.planned, r.actual);
     const color = kind === 'income' ? 'var(--dark)' : r.color;
@@ -50,12 +52,9 @@
         </div>
       </div>`;
     }
-    return `<tr class="mon-row">
+    return `<tr class="mon-row" data-cat="${n}" data-kind="${kind}">
       <td>
-        <span class="mon-move">
-          <button type="button" class="icon-btn" data-cat-move="${n}" data-dir="-1" data-kind="${kind}" ${i === 0 ? 'disabled' : ''} aria-label="Flytta ${n} upp">${ui.icon('up', 12)}</button>
-          <button type="button" class="icon-btn" data-cat-move="${n}" data-dir="1" data-kind="${kind}" ${i === len - 1 ? 'disabled' : ''} aria-label="Flytta ${n} ner">${ui.icon('down', 12)}</button>
-        </span>
+        <span class="mon-grip" tabindex="0" role="button" aria-label="Flytta ${n}. Dra, eller använd pil upp och pil ner">${GRIP}</span>
         <b>${n}</b>${shared ? ` ${ui.pill('Delad', 'soft')}` : ''}
         <p class="muted">${fmt.money(r.actual)} av ${fmt.money(r.planned)}${r.planned > 0 ? ` · ${fmt.pct(share)}` : ''}</p>
         ${ui.progress(share, color)}
@@ -77,8 +76,99 @@
         <td class="mon-num">${fmt.money(actual)}</td>
         <td class="mon-num"><span class="${diff < 0 ? 'neg' : ''}">${fmt.money(diff)}</span></td>
       </tr>
-      ${g.items.map((r, i) => rowHTML(r, g.kind, key, i, g.items.length)).join('')}
+      ${g.items.map(r => rowHTML(r, g.kind, key)).join('')}
     </tbody>`;
+  }
+
+  // ---------- Dra och släpp för att ändra ordning ----------
+  // Håll ner på en kategoris namn och dra. Med mus börjar det när du rör musen, på
+  // mobilen efter att du hållit fingret still en kort stund (annars scrollar sidan).
+  // Raden följer med och de andra flyttar sig. Ordningen sparas när du släpper.
+  function enableDrag(root) {
+    const table = root.querySelector('.mon-table');
+    if (!table) return;
+    let drag = null; // { row, body, grab, shift }
+    const cellsOf = row => [...row.children];
+    const setShift = (row, y) => cellsOf(row).forEach(td => { td.style.transform = y ? `translateY(${y}px)` : ''; });
+
+    const position = y => {
+      const { row, body } = drag;
+      const others = [...body.querySelectorAll('.mon-row')].filter(r => r !== row);
+      // Ny plats: efter alla rader vars mitt ligger ovanför pekaren
+      const idx = others.filter(r => { const b = r.getBoundingClientRect(); return b.top + b.height / 2 < y; }).length;
+      const before = others[idx];
+      if (before && row.nextElementSibling !== before) before.before(row);
+      else if (!before && others.length && others[others.length - 1].nextElementSibling !== row) others[others.length - 1].after(row);
+      // Låt raden följa pekaren
+      const natural = row.getBoundingClientRect().top; // raden själv flyttas inte, bara dess celler
+      drag.shift = y - drag.grab - natural;
+      setShift(row, drag.shift);
+      // Scrolla när du drar nära kanten
+      if (y < 70) window.scrollBy(0, -12);
+      else if (y > window.innerHeight - 70) window.scrollBy(0, 12);
+    };
+
+    const finish = commit => {
+      if (!drag) return;
+      const { row, body, kind } = drag;
+      setShift(row, 0);
+      row.classList.remove('is-dragging');
+      document.body.classList.remove('mon-dragging');
+      const names = [...body.querySelectorAll('.mon-row')].map(r => r.dataset.cat);
+      drag = null;
+      if (commit) App.setCategoryOrder(names, kind === 'income');
+    };
+
+    table.addEventListener('pointerdown', e => {
+      const cell = e.target.closest('.mon-row > td:first-child');
+      if (!cell || e.target.closest('button, input, a') || (e.pointerType === 'mouse' && e.button !== 0)) return;
+      const row = cell.parentElement;
+      const startX = e.clientX, startY = e.clientY;
+      const touch = e.pointerType !== 'mouse';
+      let started = false, timer = null;
+      const begin = () => {
+        started = true;
+        drag = { row, body: row.parentElement, kind: row.dataset.kind, grab: startY - row.getBoundingClientRect().top, shift: 0 };
+        row.classList.add('is-dragging');
+        document.body.classList.add('mon-dragging');
+        if (touch && navigator.vibrate) navigator.vibrate(10);
+      };
+      const stop = commit => {
+        clearTimeout(timer);
+        window.removeEventListener('pointermove', move);
+        window.removeEventListener('pointerup', up);
+        window.removeEventListener('pointercancel', cancel);
+        if (started) finish(commit);
+      };
+      const move = ev => {
+        if (!started) {
+          const far = Math.abs(ev.clientY - startY) > 6 || Math.abs(ev.clientX - startX) > 6;
+          if (!far) return;
+          if (touch) { stop(false); return; } // fingret rörde sig innan det höll still: det är scroll
+          begin();
+        }
+        ev.preventDefault();
+        position(ev.clientY);
+      };
+      const up = () => stop(true);
+      const cancel = () => stop(false);
+      if (touch) timer = setTimeout(begin, 280);
+      window.addEventListener('pointermove', move, { passive: false });
+      window.addEventListener('pointerup', up);
+      window.addEventListener('pointercancel', cancel);
+    });
+    // Hindra sidan från att scrolla medan en rad dras med fingret
+    table.addEventListener('touchmove', e => { if (drag) e.preventDefault(); }, { passive: false });
+    table.addEventListener('contextmenu', e => { if (drag || e.target.closest('.mon-row > td:first-child')) e.preventDefault(); });
+
+    // Tangentbord: fokusera greppet och flytta med pil upp/ner
+    table.querySelectorAll('.mon-grip').forEach(g => g.addEventListener('keydown', e => {
+      if (e.key !== 'ArrowUp' && e.key !== 'ArrowDown') return;
+      e.preventDefault();
+      const row = g.closest('.mon-row');
+      App.moveCategory(row.dataset.cat, e.key === 'ArrowUp' ? -1 : 1, row.dataset.kind === 'income');
+      requestAnimationFrame(() => document.querySelector(`.mon-row[data-cat="${CSS.escape(row.dataset.cat)}"] .mon-grip`)?.focus());
+    }));
   }
 
   App.page({
@@ -199,10 +289,7 @@
         }
         if (!st.sharedTotals[key]) st.sharedTotals[key] = {};
       };
-      // Ändra ordning på kategorierna
-      root.querySelectorAll('[data-cat-move]').forEach(b => b.addEventListener('click', () => {
-        App.moveCategory(b.dataset.catMove, Number(b.dataset.dir), b.dataset.kind === 'income');
-      }));
+      enableDrag(root);
       root.querySelectorAll('.mon-input').forEach(input => {
         input.addEventListener('change', () => {
           const value = Math.max(0, Number(input.value) || 0);

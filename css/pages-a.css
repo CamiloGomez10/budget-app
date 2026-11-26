@@ -100,7 +100,10 @@
 .mon-share-parts label > span:first-child { font-size: 11px; color: var(--muted); }
 .mon-share-parts .input-money input { font-size: 13px; }
 
-/* Flytta kategorier i budgeten */
-.mon-move { float: right; display: inline-flex; gap: 2px; margin-left: 6px; }
-.mon-move .icon-btn { padding: 4px; }
-.mon-move .icon-btn:disabled { opacity: 0.25; cursor: default; background: transparent; }
+/* Dra och släpp kategorier i budgeten */
+.mon-row > td:first-child { cursor: grab; -webkit-user-select: none; user-select: none; -webkit-touch-callout: none; }
+.mon-grip { display: inline-grid; place-items: center; width: 18px; height: 22px; margin: 0 4px 0 -6px; color: var(--muted); opacity: 0.45; vertical-align: -5px; border-radius: 4px; }
+.mon-row:hover .mon-grip, .mon-grip:focus-visible { opacity: 1; }
+.mon-grip:focus-visible { outline: 2px solid var(--caramel); }
+.mon-row.is-dragging td { position: relative; z-index: 3; background: var(--card) !important; box-shadow: 0 10px 24px rgba(43, 33, 28, 0.18); }
+body.mon-dragging, body.mon-dragging * { cursor: grabbing !important; -webkit-user-select: none; user-select: none; }
