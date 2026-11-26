@@ -66,9 +66,13 @@
       const r = App.period.range(selected);
       const payday = App.period.isPayday();
       // Räkningarna som förfaller inom perioden (lönemånad eller kalendermånad)
-      const bills = calc.billsInRange(r.start, r.end);
-      const total = sum(bills.map(b => b.amount));
-      const paid = sum(bills.filter(b => b.isPaid).map(b => b.amount));
+      // Delade räkningar (t.ex. hyra med sambo) räknas med din del
+      const bills = calc.billsInRange(r.start, r.end).map(b => {
+        const rule = calc.shareRule(b.category);
+        return { ...b, mine: rule ? calc.splitAmount(b.amount, rule).mine : b.amount, shared: !!rule };
+      });
+      const total = sum(bills.map(b => b.mine));
+      const paid = sum(bills.filter(b => b.isPaid).map(b => b.mine));
       const rangeText = `${fmt.date(r.start)} – ${fmt.date(r.end)}`;
 
       const top = `
@@ -79,7 +83,7 @@
 
       const stats = `<div class="grid-4">
         ${ui.stat({ label: payday ? 'Räkningar denna lönemånad' : 'Räkningar denna månad', value: bills.length, accent: 'var(--dark)' })}
-        ${ui.stat({ label: 'Totalt att betala', value: fmt.money(total), accent: 'var(--rose)' })}
+        ${ui.stat({ label: bills.some(b => b.shared) ? 'Din del att betala' : 'Totalt att betala', value: fmt.money(total), accent: 'var(--rose)' })}
         ${ui.stat({ label: 'Betalt', value: fmt.money(paid), accent: 'var(--caramel)' })}
         ${ui.stat({ label: 'Kvar', value: fmt.money(total - paid), accent: 'var(--dark)' })}
       </div>`;
@@ -95,7 +99,7 @@
                 <b>${fmt.dateShort(b.date)}</b>
                 <span class="bill-name">${esc(b.name)}</span>
                 ${b.isPaid ? ui.pill('Betald', 'dark') : ''}
-                <span class="amount bill-amount">${fmt.money(b.amount)}</span>
+                <span class="amount bill-amount">${fmt.money(b.amount)}${b.shared ? `<small class="bill-mine">din del ${fmt.money(b.mine)}</small>` : ''}</span>
               </div>
               <p class="muted">${[b.debtId ? 'Avbetalning' : RECURRENCE[b.recurrence] || '', b.category, calc.accountName(b.accountId)].filter(Boolean).map(esc).join(' · ')}${b.isPaid ? ` · betald ${fmt.dateShort(b.tx.date)}` : ''}</p>
               <div class="bill-actions">

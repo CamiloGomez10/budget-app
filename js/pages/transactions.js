@@ -37,8 +37,8 @@
       return `<li class="tx-row" data-edit="${esc(t.id)}" tabindex="0" role="button" aria-label="Redigera ${esc(title)}">
         <span class="tx-icon ${transfer ? 'tx-icon-move' : income ? 'tx-icon-in' : 'tx-icon-out'}" aria-hidden="true">${ui.icon(transfer ? 'swap' : income ? 'down' : 'up', 14)}</span>
         <div class="tx-main">
-          <div class="tx-title"><b>${esc(title)}</b>${t.recurring ? ui.pill('Återkommande', 'soft') : ''}${goal ? ui.pill(esc(goal.name), 'soft') : ''}${debt ? ui.pill(esc(debt.name), 'soft') : ''}</div>
-          <p class="muted">${meta}</p>
+          <div class="tx-title"><b>${esc(title)}</b>${t.total != null ? ui.pill('Delad', 'soft') : ''}${t.recurring ? ui.pill('Återkommande', 'soft') : ''}${goal ? ui.pill(esc(goal.name), 'soft') : ''}${debt ? ui.pill(esc(debt.name), 'soft') : ''}</div>
+          <p class="muted">${meta}${t.total != null ? ` · totalt ${fmt.money(t.total)}, ${esc(calc.partnerName())} ${fmt.money(t.total - t.amount)}` : ''}</p>
         </div>
         <span class="tx-amount ${plus ? 'pos' : ''}">${transfer ? '' : plus ? '+' : '−'}${fmt.money(Math.abs(t.amount))}</span>
         <button class="icon-btn tx-del" data-id="${esc(t.id)}" aria-label="Ta bort ${esc(title)}">${ui.icon('x', 14)}</button>

@@ -23,8 +23,9 @@ const MAX_ROWS = 100;
 type Tx = {
   id: string; date: string; type: "income" | "expense" | "transfer"; category: string; title?: string;
   accountId?: string; toAccountId?: string; goalId?: string | null; debtId?: string | null;
-  billId?: string; billMonth?: string; amount: number; recurring?: boolean;
+  billId?: string; billMonth?: string; amount: number; recurring?: boolean; total?: number;
 };
+type ShareRule = { mode: "percent" | "partnerFixed" | "meFixed"; value: number; roundMine?: boolean };
 type Valuation = { date: string; value: number };
 type Account = { id: string; name: string; type: string; startBalance?: number; categories?: string[]; archived?: boolean; valuations?: Valuation[] };
 type Category = { name: string; parent?: string; group?: string; debt?: boolean; color?: string };
@@ -35,7 +36,7 @@ type State = {
   transactions: Tx[]; accounts: Account[]; categories: Category[]; incomeCategories: Category[];
   parents?: string[]; goals: Goal[]; debts: Debt[]; bills: Bill[];
   budgets: Record<string, Record<string, number>>;
-  settings: { defaultAccountId?: string; period?: { mode?: string; payday?: number } };
+  settings: { defaultAccountId?: string; period?: { mode?: string; payday?: number }; sharing?: { partner?: string; rules?: Record<string, ShareRule> } };
   incomeLabel?: string;
 };
 
@@ -188,7 +189,7 @@ function makeCalc(state: State) {
     if (!b.category) return null;
     const r = period.range(period.keyOf(date));
     return state.transactions.find((t) => !t.billId && t.type === "expense" && t.category === b.category &&
-      t.date >= r.start && t.date <= r.end && Math.abs(t.amount - b.amount) < 0.5) || null;
+      t.date >= r.start && t.date <= r.end && Math.abs((t.total ?? t.amount) - b.amount) < 0.5) || null;
   }
   function billsForMonth(key: string) {
     return (state.bills || []).flatMap((b) => {
@@ -203,6 +204,31 @@ function makeCalc(state: State) {
     });
   }
   return { today, period, accName, defaultAccount, accounts, goals, debts, txBetween, txInPeriod, byCat, planned, plannedFrom, billsForMonth };
+}
+
+// ---------- Delade kostnader (samma som calc.splitAmount i js/core.js) ----------
+// Ni betalar var och en er egen del: total = hela beloppet, amount = din del.
+const partnerName = (s: State) => (s.settings.sharing?.partner || "").trim() || "Sambo";
+const shareRule = (s: State, category: string) => s.settings.sharing?.rules?.[category] || null;
+function splitAmount(total: number, rule: ShareRule | null) {
+  const r = rule || { mode: "percent", value: 50 };
+  const t = round(total);
+  let mine: number;
+  if (r.mode === "partnerFixed") mine = t - Math.min(Number(r.value) || 0, t);
+  else if (r.mode === "meFixed") mine = Math.min(Number(r.value) || 0, t);
+  else {
+    mine = t * (Number(r.value ?? 50) || 0) / 100;
+    mine = r.roundMine ? (t >= 0 ? Math.ceil(mine - 1e-9) : Math.floor(mine + 1e-9)) : round(mine);
+  }
+  mine = round(mine);
+  return { mine, partner: round(t - mine) };
+}
+function shareLabel(s: State, rule: ShareRule | null) {
+  const r = rule || { mode: "percent", value: 50 };
+  const p = partnerName(s);
+  if (r.mode === "partnerFixed") return `${p} betalar ${r.value} kr, användaren resten`;
+  if (r.mode === "meFixed") return `Användaren betalar ${r.value} kr, ${p} resten`;
+  return `Användaren betalar ${r.value ?? 50} %${r.roundMine ? " avrundat uppåt till hela kronor (den andra tar resten med ören)" : ""}`;
 }
 
 // ---------- Läsa och skriva budgeten ----------
@@ -245,6 +271,7 @@ function findCategory(state: State, type: string, name?: string) {
 function txOut(state: State, c: ReturnType<typeof makeCalc>, t: Tx) {
   return {
     id: t.id, date: t.date, type: t.type, title: t.title || "", category: t.category, amount: t.amount,
+    ...(t.total != null ? { shared: true, total_amount: t.total, partner_share: round(t.total - t.amount) } : {}),
     account: c.accName(t.accountId) || c.defaultAccount()?.name || "",
     ...(t.type === "transfer" ? { to_account: c.accName(t.toAccountId) } : {}),
   };
@@ -261,6 +288,8 @@ function describe(state: State) {
     income_categories: state.incomeCategories.map((c) => c.name),
     accounts: state.accounts.filter((a) => !a.archived).map((a) => a.name),
     default_account: def?.name || null,
+    shared_with: partnerName(state),
+    shared_categories: Object.entries(state.settings.sharing?.rules || {}).map(([category, r]) => ({ category, rule: shareLabel(state, r) })),
     budget_periods: state.settings.period?.mode === "payday"
       ? `Lönemånader från lönedag ${state.settings.period?.payday || 25}. Perioden "2026-11" är den som slutar i november.`
       : "Kalendermånader.",
@@ -270,7 +299,8 @@ function describe(state: State) {
 const DATE = z.string().describe("Datum som YYYY-MM-DD");
 const INSTRUCTIONS = `Den här kopplingen ger åtkomst till användarens privata budgetapp. Alla belopp är i svenska kronor.
 Börja med budget_info om du inte redan vet vilka kategorier och konton som finns. Hämta alltid siffror med verktygen i stället för att gissa.
-Datum räknas i svensk tid; budget_info visar dagens datum. Använd bara befintliga kategorier och konton när du lägger in eller ändrar något.`;
+Datum räknas i svensk tid; budget_info visar dagens datum. Använd bara befintliga kategorier och konton när du lägger in eller ändrar något.
+Delade kostnader: användaren delar vissa kostnader med sin sambo och var och en betalar sin egen del. För utgifter i delade kategorier (se budget_info) anger du HELA beloppet; användarens del räknas ut automatiskt och det är den som räknas i budgeten. Transaktionens amount är användarens del, total_amount hela beloppet.`;
 
 function buildServer(supabase: Db, userId: string) {
   const server = new McpServer({ name: "budget", version: "1.0.0" }, { instructions: INSTRUCTIONS });
@@ -447,7 +477,8 @@ function buildServer(supabase: Db, userId: string) {
       transactions: z.array(z.object({
         date: DATE,
         type: z.enum(["expense", "income", "transfer"]),
-        amount: z.number().describe("Positivt belopp i kronor"),
+        amount: z.number().describe("Positivt belopp i kronor. För delade utgifter: HELA beloppet (användarens del räknas ut)."),
+        shared: z.boolean().optional().describe("Dela med sambon. Standard: ja om kategorin är delad, annars nej. Utan regel delas 50/50."),
         title: z.string().describe("Kort beskrivning, t.ex. butikens namn"),
         category: z.string().optional().describe("Befintlig kategori (behövs inte för överföringar)"),
         account: z.string().optional(),
@@ -458,6 +489,7 @@ function buildServer(supabase: Db, userId: string) {
   }, async (i) => {
     try {
       const created = await modify(supabase, userId, (state) => {
+        // (amount = hela beloppet för delade utgifter)
         const c = makeCalc(state);
         const txs: Tx[] = i.transactions.map((p, n) => {
           const where = `Rad ${n + 1}: `;
@@ -477,6 +509,11 @@ function buildServer(supabase: Db, userId: string) {
             const cat = findCategory(state, p.type, p.category);
             if (!cat) throw new Error(`${where}kategorin "${p.category || ""}" finns inte.`);
             tx.category = cat.name;
+            const rule = p.type === "expense" ? shareRule(state, cat.name) : null;
+            if (p.type === "expense" && (p.shared ?? !!rule)) {
+              tx.total = amount;
+              tx.amount = splitAmount(amount, rule).mine;
+            }
           }
           return tx;
         });
@@ -494,7 +531,7 @@ function buildServer(supabase: Db, userId: string) {
     inputSchema: z.object({
       id: z.string(),
       date: DATE.optional(),
-      amount: z.number().optional(),
+      amount: z.number().optional().describe("Nytt belopp. För delade transaktioner: hela beloppet."),
       title: z.string().optional(),
       category: z.string().optional(),
       account: z.string().optional(),
@@ -507,7 +544,12 @@ function buildServer(supabase: Db, userId: string) {
         if (!t) throw new Error(`Ingen transaktion med id ${i.id}.`);
         const before = { ...t };
         if (i.date != null) { if (!isDate(i.date)) throw new Error("Ogiltigt datum."); t.date = i.date; }
-        if (i.amount != null) { const a = round(Math.abs(i.amount)); if (!a) throw new Error("Ogiltigt belopp."); t.amount = a; }
+        if (i.amount != null) {
+          const a = round(Math.abs(i.amount));
+          if (!a) throw new Error("Ogiltigt belopp.");
+          if (t.total != null) { t.total = a; t.amount = splitAmount(a, shareRule(state, t.category)).mine; } // delad: nytt hela belopp
+          else t.amount = a;
+        }
         if (i.title != null) t.title = i.title.trim();
         if (i.category != null) {
           if (t.type === "transfer") throw new Error("Överföringar har ingen kategori.");
@@ -516,6 +558,7 @@ function buildServer(supabase: Db, userId: string) {
           t.category = cat.name;
         }
         if (i.account != null) { const a = accountByName(state, i.account); if (!a) throw new Error(`Inget konto heter "${i.account}".`); t.accountId = a.id; }
+        if (t.total != null) t.amount = splitAmount(t.total, shareRule(state, t.category)).mine; // delad: räkna om din del
         state.transactions.sort((a, b) => b.date.localeCompare(a.date));
         const c = makeCalc(state);
         return { before: txOut(state, c, before), after: txOut(state, c, t) };

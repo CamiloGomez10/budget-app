@@ -118,3 +118,10 @@
 .acc-value .btn { grid-column: 1 / -1; justify-self: start; }
 .acc-values { margin-top: 6px; }
 .acc-value-right { display: inline-flex; align-items: center; gap: 4px; }
+
+/* Delad utgift i transaktionsrutan */
+.tx-share { grid-column: 1 / -1; background: var(--track); border-radius: 12px; padding: 10px 12px; display: flex; flex-direction: column; gap: 4px; }
+.tx-share-out { font-size: 13px; margin: 0; }
+.tx-share-out:empty { display: none; }
+.tx-share-out .muted { font-size: 12px; }
+.bill-mine { display: block; font-family: var(--sans); font-size: 11px; color: var(--muted); text-align: right; }
