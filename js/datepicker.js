@@ -46,6 +46,19 @@
     });
     input.addEventListener('change', () => refresh(input));
     input.addEventListener('focus', () => btn.focus());
+    // Webbläsarens egen väljare får aldrig öppnas, t.ex. när man klickar på fältets
+    // rubrik (en <label> skickar klicket vidare till det dolda fältet). Visa vår i stället.
+    input.addEventListener('click', e => { e.preventDefault(); if (!open || open.input !== input) show(input); });
+    input.showPicker = () => show(input);
+    const field = input.closest('label');
+    if (field) {
+      field.addEventListener('click', e => {
+        if (e.target.closest('button') || e.target === input) return;
+        e.preventDefault();
+        if (!open || open.input !== input) show(input);
+        btn.focus();
+      });
+    }
     btn.addEventListener('click', () => (open && open.input === input ? close() : show(input)));
     btn.addEventListener('keydown', e => onKey(e, input));
     refresh(input);
