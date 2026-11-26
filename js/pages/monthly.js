@@ -28,6 +28,7 @@
     return { income, rows: SPLIT.map(g => ({ ...g, pct: pct[g.id], target: income * pct[g.id] / 100, actual: actual[g.id] })) };
   }
 
+  const SPLIT_ICON = '<svg class="mon-share-ico" viewBox="0 0 24 24" width="16" height="16" aria-hidden="true"><path d="M12 3v18M5 8l-3 4 3 4M19 8l3 4-3 4" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/></svg>';
   const GRIP = '<svg viewBox="0 0 10 16" width="8" height="14" aria-hidden="true"><g fill="currentColor"><circle cx="2" cy="2" r="1.4"/><circle cx="8" cy="2" r="1.4"/><circle cx="2" cy="8" r="1.4"/><circle cx="8" cy="8" r="1.4"/><circle cx="2" cy="14" r="1.4"/><circle cx="8" cy="14" r="1.4"/></g></svg>';
 
   // Skillnad: för inkomster är mer än planerat bra, för utgifter är mindre bra
@@ -39,18 +40,13 @@
     const color = kind === 'income' ? 'var(--dark)' : r.color;
     const shared = kind === 'expense' && calc.isShared(r.name);
     const n = esc(r.name);
-    // Delad kategori: hela beloppet + din del + den andras del. Din del räknas i budgeten.
+    // Delad kategori: bara din del syns. Ett tryck öppnar en liten ruta med fördelningen.
     let planCell = ui.moneyInput(`class="mon-input" data-cat="${n}" min="0" value="${r.planned || 0}" aria-label="Planerat för ${n}"`);
     if (shared) {
-      const total = calc.sharedTotal(key, r.name);
-      const partner = calc.partnerName();
-      planCell = `<div class="mon-share">
-        ${ui.moneyInput(`class="mon-total" data-cat="${n}" min="0" value="${total ?? ''}" placeholder="Hela beloppet" aria-label="Hela beloppet för ${n}"`)}
-        <div class="mon-share-parts">
-          <label><span>Du</span>${ui.moneyInput(`class="mon-mine" data-cat="${n}" value="${r.planned || 0}" aria-label="Din del av ${n}"`)}</label>
-          <label><span>${esc(partner)}</span>${ui.moneyInput(`class="mon-partner" data-cat="${n}" value="${total != null ? Math.round((total - r.planned) * 100) / 100 : ''}" aria-label="${esc(partner)}s del av ${n}"`)}</label>
-        </div>
-      </div>`;
+      planCell = `<button type="button" class="mon-share-btn" data-share="${n}" aria-haspopup="dialog" aria-expanded="false"
+          aria-label="Din del av ${n}: ${fmt.money(r.planned || 0)}. Tryck för att ändra fördelningen">
+        <span class="mon-share-kr">kr</span><span class="mon-share-val">${fmt.num(r.planned || 0, 2)}</span>${SPLIT_ICON}
+      </button>`;
     }
     return `<tr class="mon-row" data-cat="${n}" data-kind="${kind}">
       <td>
@@ -78,6 +74,95 @@
       </tr>
       ${g.items.map(r => rowHTML(r, g.kind, key)).join('')}
     </tbody>`;
+  }
+
+  // ---------- Fördelning av en delad kategori (liten ruta bredvid beloppet) ----------
+  // Hela beloppet delas 50/50; ändrar du en del ändras den andra så att summan blir
+  // hela beloppet. Sparas med Klar, Enter eller klick utanför. Esc stänger utan att spara.
+  let pop = null;
+  function closeSharePop(save) {
+    if (!pop) return;
+    const p = pop;
+    pop = null;
+    p.el.remove();
+    p.btn.setAttribute('aria-expanded', 'false');
+    document.removeEventListener('mousedown', p.outside, true);
+    window.removeEventListener('resize', p.reposition);
+    window.removeEventListener('scroll', p.reposition, true);
+    if (save) p.save();
+    else p.btn.focus();
+  }
+  function openSharePop(btn, key, ensure) {
+    if (pop && pop.btn === btn) { closeSharePop(true); return; }
+    closeSharePop(true);
+    const cat = btn.dataset.share;
+    const partner = calc.partnerName();
+    const mine0 = Number(calc.planned(key)[cat]) || 0;
+    const total0 = calc.sharedTotal(key, cat);
+    const r2 = v => Math.round(v * 100) / 100;
+    const el = document.createElement('div');
+    el.className = 'mon-pop';
+    el.setAttribute('role', 'dialog');
+    el.setAttribute('aria-label', `Fördelning för ${cat}`);
+    el.innerHTML = `
+      <p class="mon-pop-title">${esc(cat)} <span>delas med ${esc(partner)}</span></p>
+      ${ui.field('Hela beloppet', ui.moneyInput(`class="mon-pop-total" value="${total0 ?? ''}" placeholder="0"`))}
+      <div class="mon-pop-parts">
+        ${ui.field('Du', ui.moneyInput(`class="mon-pop-mine" value="${mine0}"`))}
+        ${ui.field(esc(partner), ui.moneyInput(`class="mon-pop-partner" value="${total0 != null ? r2(total0 - mine0) : ''}"`))}
+      </div>
+      <p class="muted mon-pop-help">Delas 50/50. Ändrar du en del justeras den andra.</p>
+      <div class="mon-pop-actions"><button type="button" class="btn btn-primary btn-small mon-pop-done">Klar</button></div>`;
+    document.body.appendChild(el);
+    const total = el.querySelector('.mon-pop-total'), mine = el.querySelector('.mon-pop-mine'), other = el.querySelector('.mon-pop-partner');
+    total.addEventListener('input', () => {
+      const sp = calc.splitShare(Number(total.value) || 0, 0.5);
+      mine.value = sp.mine;
+      other.value = sp.partner;
+    });
+    mine.addEventListener('input', () => { if (total.value !== '') other.value = r2((Number(total.value) || 0) - (Number(mine.value) || 0)); });
+    other.addEventListener('input', () => { if (total.value !== '') mine.value = r2((Number(total.value) || 0) - (Number(other.value) || 0)); });
+
+    const save = () => {
+      const t = total.value === '' ? null : Math.max(0, r2(Number(total.value) || 0));
+      let m = Math.max(0, r2(Number(mine.value) || 0));
+      if (t != null) m = Math.min(m, t);
+      if (m === mine0 && t === total0) return; // inget ändrat
+      App.update(st => {
+        ensure(st);
+        st.budgets[key][cat] = m;
+        if (t == null) delete st.sharedTotals[key][cat]; else st.sharedTotals[key][cat] = t;
+      });
+    };
+    // Placera rutan till höger om beloppet, annars till vänster, annars under (mobil)
+    const reposition = () => {
+      if (!btn.isConnected) { closeSharePop(false); return; } // sidan ritades om
+      const r = btn.getBoundingClientRect();
+      const w = el.offsetWidth, h = el.offsetHeight, gap = 12;
+      let side = 'right', left = r.right + gap, top = r.top + r.height / 2 - h / 2;
+      if (left + w > window.innerWidth - 8) { side = 'left'; left = r.left - gap - w; }
+      if (left < 8) { side = 'below'; left = Math.min(Math.max(8, r.left + r.width / 2 - w / 2), window.innerWidth - w - 8); top = r.bottom + gap; }
+      top = Math.min(Math.max(8, top), window.innerHeight - h - 8);
+      el.style.left = `${left}px`;
+      el.style.top = `${top}px`;
+      el.dataset.side = side;
+      // Pilen pekar mot beloppet
+      el.style.setProperty('--arrow', side === 'below' ? `${r.left + r.width / 2 - left}px` : `${r.top + r.height / 2 - top}px`);
+    };
+    const outside = e => { if (!el.contains(e.target) && !btn.contains(e.target)) closeSharePop(true); };
+    pop = { el, btn, save, outside, reposition };
+    reposition();
+    btn.setAttribute('aria-expanded', 'true');
+    document.addEventListener('mousedown', outside, true);
+    window.addEventListener('resize', reposition);
+    window.addEventListener('scroll', reposition, true);
+    el.querySelector('.mon-pop-done').addEventListener('click', () => closeSharePop(true));
+    el.addEventListener('keydown', e => {
+      if (e.key === 'Escape') { e.preventDefault(); closeSharePop(false); }
+      else if (e.key === 'Enter') { e.preventDefault(); closeSharePop(true); }
+    });
+    (total0 == null ? total : mine).focus();
+    (total0 == null ? total : mine).select?.();
   }
 
   // ---------- Dra och släpp för att ändra ordning ----------
@@ -297,29 +382,8 @@
         });
       });
 
-      // Delade kategorier: hela beloppet delas 50/50. Ändrar du en del ändras den andra
-      // så att summan blir hela beloppet. Sparas när du lämnar fältet.
-      const r2 = v => Math.round(v * 100) / 100;
-      root.querySelectorAll('.mon-share').forEach(box => {
-        const cat = box.querySelector('.mon-total').dataset.cat;
-        const total = box.querySelector('.mon-total'), mine = box.querySelector('.mon-mine'), other = box.querySelector('.mon-partner');
-        total.addEventListener('input', () => {
-          const sp = calc.splitShare(Number(total.value) || 0, 0.5);
-          mine.value = sp.mine;
-          other.value = sp.partner;
-        });
-        mine.addEventListener('input', () => { if (total.value !== '') other.value = r2((Number(total.value) || 0) - (Number(mine.value) || 0)); });
-        other.addEventListener('input', () => { if (total.value !== '') mine.value = r2((Number(total.value) || 0) - (Number(other.value) || 0)); });
-        const commit = () => App.update(st => {
-          ensure(st);
-          const t = total.value === '' ? null : Math.max(0, r2(Number(total.value) || 0));
-          let m = Math.max(0, r2(Number(mine.value) || 0));
-          if (t != null) m = Math.min(m, t);
-          st.budgets[key][cat] = m;
-          if (t == null) delete st.sharedTotals[key][cat]; else st.sharedTotals[key][cat] = t;
-        });
-        [total, mine, other].forEach(el => el.addEventListener('change', commit));
-      });
+      // Delade kategorier: tryck på din del för att öppna fördelningen
+      root.querySelectorAll('[data-share]').forEach(btn => btn.addEventListener('click', () => openSharePop(btn, key, ensure)));
       root.querySelectorAll('input[data-group]').forEach(inp => {
         inp.addEventListener('change', () => {
           const v = App.clamp(Math.round(Number(inp.value) || 0), 0, 100);
