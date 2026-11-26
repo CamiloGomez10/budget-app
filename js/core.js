@@ -275,13 +275,42 @@ const App = (() => {
   // ---------- Budgetperioder ----------
   // En "månad" i appen har nyckeln "2026-11". Med lönemånader är det perioden som
   // SLUTAR i november: från lönedagen i oktober till dagen före lönedagen i november
-  // (samma logik som Notion-formeln). Faller lönedagen på en helg betalas lönen ut
-  // fredagen innan, och då börjar perioden där.
+  // (samma logik som Notion-formeln). Faller lönedagen på en helg eller en dag då
+  // bankerna har stängt betalas lönen ut närmaste bankdag innan, och då börjar perioden där.
+
+  // Påskdagen (gregoriansk beräkning, Meeus/Jones/Butcher)
+  function easter(y) {
+    const a = y % 19, b = Math.floor(y / 100), c = y % 100, d = Math.floor(b / 4), e = b % 4;
+    const f = Math.floor((b + 8) / 25), g = Math.floor((b - f + 1) / 3);
+    const h = (19 * a + b - d - g + 15) % 30, i = Math.floor(c / 4), k = c % 4;
+    const l = (32 + 2 * e + 2 * i - h - k) % 7, m = Math.floor((a + 11 * h + 22 * l) / 451);
+    const month = Math.floor((h + l - 7 * m + 114) / 31), day = ((h + l - 7 * m + 114) % 31) + 1;
+    return new Date(y, month - 1, day);
+  }
+  // Svenska dagar då bankerna har stängt (helgdagar + julafton, midsommarafton och nyårsafton)
+  const holidayCache = {};
+  function bankHolidays(y) {
+    if (holidayCache[y]) return holidayCache[y];
+    const e = easter(y);
+    const rel = n => iso(new Date(y, e.getMonth(), e.getDate() + n));
+    // Midsommarafton: fredagen mellan 19 och 25 juni
+    const mid = new Date(y, 5, 19);
+    while (mid.getDay() !== 5) mid.setDate(mid.getDate() + 1);
+    const set = new Set([
+      `${y}-01-01`, `${y}-01-06`,               // nyårsdagen, trettondedag jul
+      rel(-2), rel(1), rel(39),                  // långfredag, annandag påsk, Kristi himmelsfärd
+      `${y}-05-01`, `${y}-06-06`,               // första maj, nationaldagen
+      iso(mid),                                  // midsommarafton
+      `${y}-12-24`, `${y}-12-25`, `${y}-12-26`, `${y}-12-31`, // julafton, juldagen, annandag jul, nyårsafton
+    ]);
+    return (holidayCache[y] = set);
+  }
+  const isBankDay = d => d.getDay() !== 0 && d.getDay() !== 6 && !bankHolidays(d.getFullYear()).has(iso(d));
+
   function payDate(year, monthIndex) {
     const day = Math.min(Number(state.settings.period?.payday) || 25, new Date(year, monthIndex + 1, 0).getDate());
     const d = new Date(year, monthIndex, day);
-    if (d.getDay() === 6) d.setDate(d.getDate() - 1);      // lördag → fredag
-    else if (d.getDay() === 0) d.setDate(d.getDate() - 2); // söndag → fredag
+    while (!isBankDay(d)) d.setDate(d.getDate() - 1); // helg eller röd dag → bankdagen innan
     return d;
   }
   const period = {

@@ -1,6 +1,6 @@
 // Service worker: gör appen tillgänglig offline.
 // Höj versionen när filerna ändras så att den gamla cachen rensas.
-const CACHE = 'budget-v4';
+const CACHE = 'budget-v5';
 const FONT_CACHE = 'budget-fonts-v1';
 
 const SHELL = [
@@ -29,7 +29,6 @@ const SHELL = [
   './js/pages/planner503020.js',
   './js/pages/nospend.js',
   './js/pages/reports.js',
-  './js/pages/backup.js',
   './js/pages/setup.js',
 ];
 

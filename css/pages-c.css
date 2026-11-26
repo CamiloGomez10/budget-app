@@ -50,19 +50,6 @@
 .rep-mini .stat { box-shadow: none; border-left: 3px solid var(--dark); padding: 10px 12px; }
 .rep-mini .stat-value { font-size: 19px; }
 
-/* ---------- Säkerhetskopia ---------- */
-.bk-text { margin-bottom: 10px; }
-.bk-gap { margin-top: 14px; }
-.bk-restore { display: flex; flex-direction: column; gap: 10px; margin-top: 12px; }
-.bk-restore input[type="file"] { font-size: 12.5px; max-width: 100%; }
-.bk-reset { display: flex; justify-content: space-between; align-items: center; gap: 16px; flex-wrap: wrap; }
-.bk-reset .bk-text { margin: 0; flex: 1; min-width: 220px; }
-.bk-danger { border: 1px solid var(--danger); }
-.bk-danger:hover { background: #f6e3dd; }
-.bk-msg { border-radius: 10px; padding: 10px 14px; font-weight: 500; }
-.bk-ok { background: #e3ead8; color: #3f5a1f; }
-.bk-error { background: #f6e3dd; color: var(--danger); }
-
 /* ---------- Inställningar ---------- */
 .set-gap { margin-bottom: 12px; }
 .set-text { margin-bottom: 10px; }

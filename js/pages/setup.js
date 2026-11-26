@@ -10,6 +10,16 @@
   const FALLBACK_COLOR = '#8a6a55';
   let saved = false;
 
+  // Förklaring av budgetmånaden med användarens egna datum
+  function periodHelp() {
+    const base = 'Med lönemånad heter perioden efter månaden den slutar i. Infaller lönedagen på en helg eller röd dag (t.ex. julafton eller midsommarafton) börjar perioden bankdagen innan.';
+    if (!App.period.isPayday()) return base;
+    const cur = App.period.current();
+    const keys = [App.addMonths(cur, -1), cur, App.addMonths(cur, 1)];
+    const list = keys.map(k => `${k === cur ? '<b>' : ''}${fmt.cap(fmt.monthName(Number(k.slice(5)) - 1))}: ${App.period.rangeLabel(k)}${k === cur ? ' (nu)</b>' : ''}`).join('<br>');
+    return `${base}<br><br>Dina perioder:<br>${list}`;
+  }
+
   function parentOptions(s, selected) {
     return (s.parents || []).map(p => `<option ${p === selected ? 'selected' : ''}>${esc(p)}</option>`).join('');
   }
@@ -53,7 +63,7 @@
               <option value="payday" ${s.settings.period?.mode === 'payday' ? 'selected' : ''}>Lönemånad (lönedag till dagen före nästa)</option>
             </select>`)}
             ${ui.field('Lönedag', `<input type="number" name="payday" min="1" max="28" value="${esc(s.settings.period?.payday || 25)}">`)}
-            <p class="muted">Med lönemånad heter perioden efter månaden den slutar i: november = 25 okt – 24 nov. Infaller lönedagen på en helg börjar perioden fredagen innan.</p>
+            <p class="muted">${periodHelp()}</p>
             ${ui.field('Budgeten börjar', `<input type="date" name="startDate" value="${esc(s.settings.startDate)}">`)}
             <button class="btn btn-primary btn-block" type="submit">Spara inställningar</button>
             ${saved ? '<p class="set-saved" role="status">✓ Sparat</p>' : ''}
@@ -73,7 +83,7 @@
           <p class="set-error" id="catError" role="alert"></p>
           <div class="set-private">
             <span class="set-private-icon">${ui.icon('lock', 18)}</span>
-            <div><b>Privat från början</b><p class="muted">Ingen registrering behövs. Allt sparas på den här enheten.</p></div>
+            <div><b>Privat och sparat</b><p class="muted">När du är inloggad sparas allt automatiskt i ditt eget, skyddade molnkonto – och en kopia finns på enheten.</p></div>
           </div>`,
       });
 
@@ -92,11 +102,29 @@
           <p class="muted">Installation kräver HTTPS, till exempel din GitHub Pages-adress. Efter installationen fungerar appen även utan internet.</p>`,
       });
 
-      return `<div class="grid-2">${foundation}${categories}</div><div class="grid-2">${demo}${install}</div>`;
+      const backup = ui.card({
+        overline: 'Säkerhetskopia', title: 'Ladda ner din data',
+        body: `<p class="set-text">Allt sparas automatiskt, men vill du ha en egen kopia ifall att kan du ladda ner all data som en fil.</p>
+          <button class="btn btn-secondary" id="setBackup">${ui.icon('down', 14)} Ladda ner säkerhetskopia</button>`,
+      });
+
+      return `<div class="grid-2">${foundation}${categories}</div><div class="grid-3">${backup}${demo}${install}</div>`;
     },
 
     mount(root) {
       saved = false;
+
+      root.querySelector('#setBackup').addEventListener('click', () => {
+        const payload = { app: 'budget', exportedAt: new Date().toISOString(), mode: App.mode, data: App.state };
+        const blob = new Blob([JSON.stringify(payload, null, 2)], { type: 'application/json' });
+        const a = document.createElement('a');
+        a.href = URL.createObjectURL(blob);
+        a.download = `budget-sakerhetskopia-${App.iso(App.today())}.json`;
+        document.body.appendChild(a);
+        a.click();
+        a.remove();
+        setTimeout(() => URL.revokeObjectURL(a.href), 1000);
+      });
 
       root.querySelector('#setForm').addEventListener('submit', e => {
         e.preventDefault();

@@ -9,6 +9,10 @@ create table if not exists public.budget_state (
 
 alter table public.budget_state enable row level security;
 
+-- Nya Supabase-projekt ger inte tabeller behörighet automatiskt: bara inloggade får läsa/skriva
+-- (och raderna begränsas ändå till det egna kontot av reglerna nedan).
+grant select, insert, update on public.budget_state to authenticated;
+
 drop policy if exists "Läs egen budget" on public.budget_state;
 drop policy if exists "Skapa egen budget" on public.budget_state;
 drop policy if exists "Ändra egen budget" on public.budget_state;
