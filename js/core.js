@@ -538,19 +538,22 @@ const App = (() => {
         if (b.recurrence === 'yearly' && Number(key.slice(5)) !== due.getMonth() + 1) return [];
         if (dueKey > key && b.recurrence !== 'once') return [];
         const day = Math.min(due.getDate(), daysInMonth(key));
-        const tx = calc.billTx(b, key);
-        return [{ ...b, date: `${key}-${pad2(day)}`, isPaid: !!tx, tx }];
+        const date = `${key}-${pad2(day)}`;
+        const tx = calc.billTx(b, key, date);
+        return [{ ...b, date, month: key, isPaid: !!tx, tx }];
       }).sort((a, b) => a.date.localeCompare(b.date));
     },
 
     // Transaktionen som betalade räkningen en viss månad: kopplad direkt, eller en utgift
-    // i samma kategori, samma kalendermånad och med samma belopp som inte hör till en annan räkning.
-    billTx(b, key) {
+    // i samma kategori, samma budgetperiod (lönemånad) som förfallodagen och med samma
+    // belopp som inte hör till en annan räkning.
+    billTx(b, key, date = '') {
       const linked = state.transactions.find(t => t.billId === b.id && t.billMonth === key);
       if (linked) return linked;
       if (!b.category) return null;
+      const r = period.range(period.keyOf(date || `${key}-01`));
       return state.transactions.find(t => !t.billId && t.type === 'expense' && t.category === b.category
-        && t.date.slice(0, 7) === key && Math.abs(t.amount - b.amount) < 0.5) || null;
+        && t.date >= r.start && t.date <= r.end && Math.abs(t.amount - b.amount) < 0.5) || null;
     },
 
     // Räkningar med förfallodag mellan två datum (ISO), över flera kalendermånader

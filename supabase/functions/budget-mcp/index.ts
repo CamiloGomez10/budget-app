@@ -181,12 +181,14 @@ function makeCalc(state: State) {
     return Object.keys(budgets).filter((k) => k < key).sort().pop() || null;
   };
   const planned = (key: string) => { const src = plannedFrom(key); return src ? state.budgets[src] : {}; };
-  function billTx(b: Bill, key: string) {
+  // Betald: kopplad transaktion, eller en utgift i samma kategori, samma budgetperiod som förfallodagen och samma belopp
+  function billTx(b: Bill, key: string, date: string) {
     const linked = state.transactions.find((t) => t.billId === b.id && t.billMonth === key);
     if (linked) return linked;
     if (!b.category) return null;
+    const r = period.range(period.keyOf(date));
     return state.transactions.find((t) => !t.billId && t.type === "expense" && t.category === b.category &&
-      t.date.slice(0, 7) === key && Math.abs(t.amount - b.amount) < 0.5) || null;
+      t.date >= r.start && t.date <= r.end && Math.abs(t.amount - b.amount) < 0.5) || null;
   }
   function billsForMonth(key: string) {
     return (state.bills || []).flatMap((b) => {
@@ -196,7 +198,8 @@ function makeCalc(state: State) {
       if (b.recurrence === "yearly" && Number(key.slice(5)) !== due.getMonth() + 1) return [];
       if (dueKey > key && b.recurrence !== "once") return [];
       const day = Math.min(due.getDate(), daysInMonth(key));
-      return [{ name: b.name, amount: b.amount, date: `${key}-${pad2(day)}`, paid: !!billTx(b, key) }];
+      const date = `${key}-${pad2(day)}`;
+      return [{ name: b.name, amount: b.amount, date, paid: !!billTx(b, key, date) }];
     });
   }
   return { today, period, accName, defaultAccount, accounts, goals, debts, txBetween, txInPeriod, byCat, planned, plannedFrom, billsForMonth };

@@ -1,7 +1,7 @@
-// Räkningar & kalender – förfallodagar och återkommande räkningar.
+// Räkningar & kalender – förfallodagar per budgetperiod (lönemånad eller kalendermånad).
 // En räkning är betald när det finns en transaktion för den: "Betala" skapar transaktionen.
 (() => {
-  const { fmt, calc, ui, esc, uid, ym, today, parseISO, daysInMonth, pad2, sum } = App;
+  const { fmt, calc, ui, esc, uid, today, parseISO, sum } = App;
 
   // Gemensam formulärdialog (används även av Konton, Sparande, Skulder).
   // onSubmit(FormData) körs vid "Spara"; returnera false för att låta dialogen vara öppen.
@@ -53,8 +53,7 @@
     debtId: f.get('debtId') || undefined,
   });
   const WEEKDAYS = ['M', 'T', 'O', 'T', 'F', 'L', 'S'];
-  let selected = ym(today());
-
+  let selected = null; // budgetperiod ("2026-12" = lönemånaden som slutar i december); sätts vid första visningen
   App.page({
     id: 'rakningar',
     title: 'Räkningar',
@@ -63,27 +62,31 @@
     icon: 'bill',
 
     render(s) {
-      const bills = calc.billsForMonth(selected);
+      if (!selected) selected = App.period.current();
+      const r = App.period.range(selected);
+      const payday = App.period.isPayday();
+      // Räkningarna som förfaller inom perioden (lönemånad eller kalendermånad)
+      const bills = calc.billsInRange(r.start, r.end);
       const total = sum(bills.map(b => b.amount));
       const paid = sum(bills.filter(b => b.isPaid).map(b => b.amount));
-      const [Y, M] = selected.split('-').map(Number);
+      const rangeText = `${fmt.date(r.start)} – ${fmt.date(r.end)}`;
 
       const top = `
         <div class="bill-top">
-          ${ui.field('Vald månad', `<input type="month" id="billMonth" value="${selected}">`)}
-          <p class="muted">När du trycker på <b>Betala</b> skapas utgiften under Transaktioner, och kontot (och en eventuell skuld) uppdateras. En utgift i räkningens kategori med samma belopp samma månad räknas också som betalning.</p>
+          ${ui.field(payday ? 'Lönemånad' : 'Månad', `<input type="month" id="billMonth" value="${selected}">`)}
+          <p class="muted">${payday ? `<b>${rangeText}</b>. ` : ''}När du trycker på <b>Betala</b> skapas utgiften under Transaktioner, och kontot (och en eventuell skuld) uppdateras. En utgift i räkningens kategori med samma belopp i samma ${payday ? 'lönemånad' : 'månad'} räknas också som betalning.</p>
         </div>`;
 
       const stats = `<div class="grid-4">
-        ${ui.stat({ label: 'Räkningar denna månad', value: bills.length, accent: 'var(--dark)' })}
+        ${ui.stat({ label: payday ? 'Räkningar denna lönemånad' : 'Räkningar denna månad', value: bills.length, accent: 'var(--dark)' })}
         ${ui.stat({ label: 'Totalt att betala', value: fmt.money(total), accent: 'var(--rose)' })}
         ${ui.stat({ label: 'Betalt', value: fmt.money(paid), accent: 'var(--caramel)' })}
         ${ui.stat({ label: 'Kvar', value: fmt.money(total - paid), accent: 'var(--dark)' })}
       </div>`;
 
       const list = ui.card({
-        overline: 'Vald månad', title: 'Kommande räkningar',
-        right: `<span>${fmt.cap(fmt.month(selected))}</span>`,
+        overline: payday ? 'Vald lönemånad' : 'Vald månad', title: 'Kommande räkningar',
+        right: `<span>${payday ? rangeText : fmt.cap(fmt.month(selected))}</span>`,
         body: bills.length ? `<ul class="rows">${bills.map(b => `
           <li class="bill-row">
             <span class="bill-dot" style="background:${b.debtId ? 'var(--dark)' : 'var(--caramel)'}"></span>
@@ -98,42 +101,46 @@
               <div class="bill-actions">
                 ${b.isPaid
                   ? `<button class="btn btn-small" data-show="${b.tx.id}">Visa betalning</button>`
-                  : `<button class="btn btn-secondary" data-pay="${b.id}" data-date="${b.date}">Betala</button>`}
+                  : `<button class="btn btn-secondary" data-pay="${b.id}" data-date="${b.date}" data-month="${b.month}">Betala</button>`}
                 <button class="btn btn-small" data-edit="${b.id}">Redigera</button>
                 <button class="icon-btn" data-delete="${b.id}" aria-label="Ta bort ${esc(b.name)}">${ui.icon('x', 14)}</button>
               </div>
             </div>
           </li>`).join('')}</ul>`
-          : ui.empty('Inga räkningar den här månaden', 'Lägg till en räkning i formuläret nedan.'),
+          : ui.empty(payday ? 'Inga räkningar den här lönemånaden' : 'Inga räkningar den här månaden', 'Lägg till en räkning i formuläret nedan.'),
       });
 
-      // Kalender, måndag först
-      const first = new Date(Y, M - 1, 1);
+      // Kalender över periodens dagar, måndag först. Första dagen och varje månadsskifte
+      // får månadens namn, så att det syns när perioden går över till nästa månad.
+      const first = parseISO(r.start);
+      const last = parseISO(r.end);
       const offset = (first.getDay() + 6) % 7;
-      const days = daysInMonth(selected);
       const todayIso = App.iso(today());
       let cells = '';
+      let count = 0;
       for (let i = 0; i < offset; i++) cells += '<div class="bill-cell bill-cell-empty"></div>';
-      for (let d = 1; d <= days; d++) {
-        const date = `${selected}-${pad2(d)}`;
+      for (const d = new Date(first); d <= last; d.setDate(d.getDate() + 1)) {
+        const date = App.iso(d);
         const items = bills.filter(b => b.date === date);
+        const label = count === 0 || d.getDate() === 1 ? `${d.getDate()} ${fmt.monthShort(d.getMonth())}` : d.getDate();
         cells += `<div class="bill-cell ${date === todayIso ? 'bill-today' : ''}">
-          <span class="bill-daynum">${d}</span>
+          <span class="bill-daynum">${label}</span>
           ${items.map(b => `<span class="bill-chip ${b.debtId ? 'bill-chip-dark' : ''} ${b.isPaid ? 'bill-chip-paid' : ''}" title="${esc(b.name)} – ${fmt.money(b.amount)}"><span class="bill-chip-text">${esc(b.name)} – ${fmt.money(b.amount)}</span></span>`).join('')}
         </div>`;
+        count++;
       }
-      const trailing = (7 - ((offset + days) % 7)) % 7;
+      const trailing = (7 - ((offset + count) % 7)) % 7;
       for (let i = 0; i < trailing; i++) cells += '<div class="bill-cell bill-cell-empty"></div>';
 
       const calendar = ui.card({
-        overline: fmt.month(selected), title: 'Räkningar & smart kalender',
+        overline: payday ? rangeText : fmt.month(selected), title: 'Räkningar & smart kalender',
         body: `<div class="bill-cal">${WEEKDAYS.map(w => `<div class="bill-wd">${w}</div>`).join('')}${cells}</div>`,
       });
 
       const add = ui.card({
         overline: 'Schema', title: 'Lägg till räkning',
         body: `<form id="billForm" class="form-stack">
-          ${billFields(s, { dueDate: `${selected}-${pad2(Math.min(25, days))}` })}
+          ${billFields(s, { dueDate: todayIso >= r.start && todayIso <= r.end ? todayIso : r.start })}
           <button class="btn btn-primary btn-block" type="submit">Lägg till i kalendern</button>
         </form>`,
       });
@@ -154,7 +161,7 @@
           // Betalningen blir en transaktion kopplad till räkningen och månaden
           const b = find(btn.dataset.pay);
           const date = btn.dataset.date;
-          const preset = { type: 'expense', amount: b.amount, date: date <= App.iso(today()) ? date : App.iso(today()), title: b.name, billId: b.id, billMonth: selected };
+          const preset = { type: 'expense', amount: b.amount, date: date <= App.iso(today()) ? date : App.iso(today()), title: b.name, billId: b.id, billMonth: btn.dataset.month };
           if (b.category) preset.category = b.category;
           if (b.accountId) preset.accountId = b.accountId;
           if (b.debtId) preset.debtId = b.debtId;
