@@ -1,10 +1,6 @@
-// Inställningar – valuta, lönemånad, kategorier och säkerhetskopia.
+// Inställningar – lönemånad, kategorier och säkerhetskopia.
 (() => {
   const { ui, esc, fmt } = App;
-  const CURRENCIES = [
-    ['SEK', 'Svenska kronor (SEK)'], ['EUR', 'Euro (EUR)'], ['USD', 'US-dollar (USD)'],
-    ['NOK', 'Norska kronor (NOK)'], ['DKK', 'Danska kronor (DKK)'], ['GBP', 'Brittiska pund (GBP)'],
-  ];
   const GROUPS = [['needs', 'Behov'], ['wants', 'Nöje'], ['future', 'Framtid & sparande']];
   const opt = (list, sel) => list.map(([v, l]) => `<option value="${v}" ${v === sel ? 'selected' : ''}>${l}</option>`).join('');
   const FALLBACK_COLOR = '#8a6a55';
@@ -173,9 +169,7 @@
 
       const foundation = ui.card({
         overline: 'Grundinställningar', title: 'Budgetens grund',
-        body: `<p class="muted set-gap">Valutan ändrar bara hur belopp visas. Beloppen räknas inte om.</p>
-          <form class="form-stack" id="setForm">
-            ${ui.field('Valuta', `<select name="currency">${opt(CURRENCIES, s.settings.currency)}</select>`)}
+        body: `<form class="form-stack" id="setForm">
             ${ui.field('Budgetmånad', `<select name="periodMode">
               <option value="calendar" ${s.settings.period?.mode !== 'payday' ? 'selected' : ''}>Kalendermånad (1:a till sista)</option>
               <option value="payday" ${s.settings.period?.mode === 'payday' ? 'selected' : ''}>Lönemånad (lönedag till dagen före nästa)</option>
@@ -244,7 +238,6 @@
         e.preventDefault();
         const f = new FormData(e.target);
         App.update(s => {
-          s.settings.currency = f.get('currency');
           s.settings.period = {
             mode: f.get('periodMode') === 'payday' ? 'payday' : 'calendar',
             payday: Math.min(28, Math.max(1, Number(f.get('payday')) || 25)),

@@ -53,24 +53,16 @@ const App = (() => {
   const clamp = (v, a, b) => Math.min(b, Math.max(a, v));
 
   // ---------- Formatering ----------
-  const CURRENCIES = {
-    SEK: { label: 'SEK kr', locale: 'sv-SE' },
-    EUR: { label: 'EUR €',  locale: 'sv-SE' },
-    USD: { label: 'USD $',  locale: 'en-US' },
-    NOK: { label: 'NOK kr', locale: 'nb-NO' },
-    DKK: { label: 'DKK kr', locale: 'da-DK' },
-    GBP: { label: 'GBP £',  locale: 'en-GB' },
+  // Alla belopp är i svenska kronor.
+  const MONEY = {
+    2: new Intl.NumberFormat('sv-SE', { style: 'currency', currency: 'SEK', minimumFractionDigits: 2, maximumFractionDigits: 2 }),
+    0: new Intl.NumberFormat('sv-SE', { style: 'currency', currency: 'SEK', minimumFractionDigits: 0, maximumFractionDigits: 0 }),
   };
   const MONTHS = ['januari', 'februari', 'mars', 'april', 'maj', 'juni', 'juli', 'augusti', 'september', 'oktober', 'november', 'december'];
   const MONTHS_SHORT = ['jan', 'feb', 'mar', 'apr', 'maj', 'jun', 'jul', 'aug', 'sep', 'okt', 'nov', 'dec'];
 
   const fmt = {
-    money(v, decimals = 2) {
-      const cur = state.settings.currency;
-      return new Intl.NumberFormat((CURRENCIES[cur] || CURRENCIES.SEK).locale, {
-        style: 'currency', currency: cur, minimumFractionDigits: decimals, maximumFractionDigits: decimals,
-      }).format(Number(v) || 0);
-    },
+    money: (v, decimals = 2) => (MONEY[decimals] || MONEY[2]).format(Number(v) || 0),
     money0: v => fmt.money(v, 0),
     pct: (v, d = 0) => new Intl.NumberFormat('sv-SE', { style: 'percent', maximumFractionDigits: d, minimumFractionDigits: d }).format(Number.isFinite(v) ? v : 0),
     num: (v, d = 0) => new Intl.NumberFormat('sv-SE', { maximumFractionDigits: d }).format(v),
@@ -90,7 +82,7 @@ const App = (() => {
     return {
       version: 2,
       // period.mode: 'calendar' (1:a–sista) eller 'payday' (lönedag till dagen före nästa lönedag)
-      settings: { currency: 'SEK', frequency: 'monthly', startDate: `${now.getFullYear()}-01-01`, heroImage: null, period: { mode: 'calendar', payday: 25 } },
+      settings: { frequency: 'monthly', startDate: `${now.getFullYear()}-01-01`, heroImage: null, period: { mode: 'calendar', payday: 25 } },
       categories: DEFAULT_CATEGORIES.map(c => ({ ...c })),   // utgiftskategorier (underkategorier)
       parents: [...DEFAULT_PARENTS],                           // huvudkategorier för utgifter, i ordning
       parentTypes: { ...DEFAULT_PARENT_TYPES },                // { huvudkategori: fixed|variable|saving }
@@ -139,6 +131,7 @@ const App = (() => {
   function migrate(s) {
     if (!s || s.version !== 2) return null;
     const out = { ...emptyState(), ...s, settings: { ...emptyState().settings, ...s.settings } };
+    delete out.settings.currency; // appen visar alltid svenska kronor
     // Äldre data utan inkomstkategorier: hämta dem från befintliga inkomster
     if (!Array.isArray(s.incomeCategories)) {
       const names = [...new Set((s.transactions || []).filter(t => t.type === 'income').map(t => t.category).filter(Boolean))];
@@ -621,9 +614,9 @@ const App = (() => {
     field(label, control, cls = '') {
       return `<label class="field ${cls}"><span class="field-label">${label}</span>${control}</label>`;
     },
-    // Input med valutaprefix
+    // Input med kr-prefix
     moneyInput(attrs) {
-      return `<span class="input-money"><span>${currencySymbol()}</span><input type="number" inputmode="decimal" step="any" ${attrs}></span>`;
+      return `<span class="input-money"><span>kr</span><input type="number" inputmode="decimal" step="any" ${attrs}></span>`;
     },
     empty(text, sub = '') {
       return `<div class="empty"><span class="empty-icon">${icon('chart', 20)}</span><p class="empty-title">${text}</p>${sub ? `<p class="empty-sub">${sub}</p>` : ''}</div>`;
@@ -666,11 +659,6 @@ const App = (() => {
       return [...years].sort().map(y => `<option ${y === selected ? 'selected' : ''}>${y}</option>`).join('');
     },
   };
-
-  function currencySymbol() {
-    const parts = new Intl.NumberFormat((CURRENCIES[state.settings.currency] || CURRENCIES.SEK).locale, { style: 'currency', currency: state.settings.currency }).formatToParts(0);
-    return (parts.find(p => p.type === 'currency') || { value: '' }).value;
-  }
 
   // ---------- Tooltip ----------
   function tooltipEl() { return document.getElementById('tooltip'); }
@@ -975,16 +963,12 @@ const App = (() => {
   }
 
   function topbarHTML(p) {
-    const cur = state.settings.currency;
     return `<div class="page-top">
       <div>
         <p class="overline">${esc(p.overline || p.title)}</p>
         <h1 class="page-title">${esc(p.heading || p.title)}</h1>
       </div>
       <div class="page-actions">
-        <label class="select-pill"><span class="sr-only">Valuta</span>
-          <select id="currencySelect">${Object.entries(CURRENCIES).map(([k, v]) => `<option value="${k}" ${k === cur ? 'selected' : ''}>${v.label}</option>`).join('')}</select>
-        </label>
         <button class="btn btn-primary" id="addTxBtn">${icon('plus', 14)} Lägg till transaktion</button>
       </div>
     </div>
@@ -1009,7 +993,6 @@ const App = (() => {
       body = ui.card({ title: 'Något gick fel', body: `<p class="muted">${esc(err.message)}</p>` });
     }
     root.innerHTML = topbarHTML(p) + `<div class="page-body">${body}</div>`;
-    root.querySelector('#currencySelect').addEventListener('change', e => update(s => { s.settings.currency = e.target.value; }));
     root.querySelector('#addTxBtn').addEventListener('click', () => openTransactionDialog());
     if (p.mount) {
       try { p.mount(root.querySelector('.page-body'), state); } catch (err) { console.error(err); }
@@ -1052,10 +1035,10 @@ const App = (() => {
     get state() { return state; },
     get mode() { return mode; },
     get storageKeys() { return KEYS; },
-    COLORS, CATEGORY_COLORS, CURRENCIES, OTHER_PARENT, PARENT_TYPES,
+    COLORS, CATEGORY_COLORS, OTHER_PARENT, PARENT_TYPES,
     renameCategory, renameParent,
     uid, esc, iso, ym, parseISO, today, daysInMonth, addMonths, sum, clamp, pad2,
-    fmt, calc, ui, charts, period, categoryColor, currencySymbol,
+    fmt, calc, ui, charts, period, categoryColor,
     openTransactionDialog, confirm: confirmDialog, bindTooltip, tipRow,
   };
 })();
