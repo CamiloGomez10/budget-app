@@ -15,6 +15,7 @@ const SHELL = [
   './css/pages-c.css',
   './js/version.js',
   './js/select.js',
+  './js/monthpicker.js',
   './js/vendor/supabase.js',
   './js/core.js',
   './js/sync.js',
