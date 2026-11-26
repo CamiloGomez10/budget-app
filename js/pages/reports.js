@@ -63,7 +63,7 @@
         overline: 'Utgiftstrend', title: 'Utgifter per månad', right: `<span>${periodLabel}</span>`,
         body: hasTx
           ? `<div class="chart" id="repSpending"></div>${ui.tableView(['Månad', 'Utgifter'], d.months.map(m => [longLabel(m.key), fmt.money0(m.expense)]))}`
-          : ui.empty('Ditt diagram visas här när du har lagt in data.', 'Lägg till en transaktion eller ladda exempeldata för att börja.'),
+          : ui.empty('Ditt diagram visas här när du har lagt in data.', 'Lägg till en transaktion för att börja.'),
       });
 
       const where = ui.card({

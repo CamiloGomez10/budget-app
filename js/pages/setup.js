@@ -1,4 +1,4 @@
-// Inställningar – valuta, kategorier, exempelläge och installation.
+// Inställningar – valuta, lönemånad, kategorier och säkerhetskopia.
 (() => {
   const { ui, esc, fmt } = App;
   const CURRENCIES = [
@@ -216,28 +216,13 @@
           </div>`,
       });
 
-      const demo = ui.card({
-        overline: 'Exempel & test', title: 'Exempelläge',
-        body: `<p class="set-text">Exempelläget är skilt från dina egna uppgifter. ${App.mode === 'demo' ? 'Avsluta det för att komma tillbaka till dem.' : 'Prova appen med påhittade siffror utan att röra din egen data.'}</p>
-          ${App.mode === 'demo'
-            ? '<button class="btn btn-primary" id="setDemo" data-to="personal">Avsluta exempelläge</button>'
-            : '<button class="btn btn-secondary" id="setDemo" data-to="demo">Ladda exempeldata</button>'}`,
-      });
-
-      const install = ui.card({
-        overline: 'Installera', title: 'Använd som app',
-        body: `<p class="set-text">På iPhone eller iPad: öppna sidan i Safari, tryck på <b>Dela</b> och välj <b>Lägg till på hemskärmen</b>.</p>
-          <p class="set-text">I andra webbläsare: öppna webbläsarens meny och välj <b>Installera app</b>.</p>
-          <p class="muted">Installation kräver HTTPS, till exempel din GitHub Pages-adress. Efter installationen fungerar appen även utan internet.</p>`,
-      });
-
       const backup = ui.card({
         overline: 'Säkerhetskopia', title: 'Ladda ner din data',
         body: `<p class="set-text">Allt sparas automatiskt, men vill du ha en egen kopia ifall att kan du ladda ner all data som en fil.</p>
           <button class="btn btn-secondary" id="setBackup">${ui.icon('down', 14)} Ladda ner säkerhetskopia</button>`,
       });
 
-      return `<div class="grid-2">${foundation}${parentsCard}</div>${categories}<div class="grid-3">${backup}${demo}${install}</div>`;
+      return `<div class="grid-2">${foundation}${parentsCard}</div>${categories}${backup}`;
     },
 
     mount(root) {
@@ -378,9 +363,6 @@
         App.update(s => { s.parents.push(name); s.parentTypes = { ...(s.parentTypes || {}), [name]: f.get('type') }; });
       });
 
-      root.querySelector('#setDemo').addEventListener('click', e => {
-        App.setMode(e.currentTarget.dataset.to);
-      });
     },
   });
 })();

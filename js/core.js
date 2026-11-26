@@ -6,7 +6,8 @@
 'use strict';
 
 const App = (() => {
-  const KEYS = { personal: 'budget-personal-v2', demo: 'budget-demo-v2', mode: 'budget-mode' };
+  const KEYS = { personal: 'budget-personal-v2', mode: 'budget-mode' };
+  const OLD_DEMO_KEY = 'budget-demo-v2'; // exempelläget är borttaget; gammal data städas bort
 
   // ---------- Kategorier ----------
   // Färgerna är kontrollerade för färgblindhet (i den här ordningen).
@@ -118,7 +119,8 @@ const App = (() => {
     };
   }
 
-  let mode = 'demo';
+  // Appen har bara ett läge: din egen data (mode finns kvar för molnsynken)
+  const mode = 'personal';
   let state = emptyState();
 
   function read(key) {
@@ -129,15 +131,8 @@ const App = (() => {
   }
 
   function load() {
-    let m = null;
-    try { m = localStorage.getItem(KEYS.mode); } catch (e) { /* ignorera */ }
-    // Första besöket: visa exempeldata så att sidorna inte är tomma.
-    mode = m === 'personal' ? 'personal' : 'demo';
-    if (mode === 'demo') {
-      state = migrate(read(KEYS.demo)) || createDemoState();
-    } else {
-      state = migrate(read(KEYS.personal)) || emptyState();
-    }
+    try { localStorage.removeItem(OLD_DEMO_KEY); } catch (e) { /* ignorera */ }
+    state = migrate(read(KEYS.personal)) || emptyState();
     save();
   }
 
@@ -194,7 +189,7 @@ const App = (() => {
   }
 
   function save() {
-    write(mode === 'demo' ? KEYS.demo : KEYS.personal, state);
+    write(KEYS.personal, state);
     try { localStorage.setItem(KEYS.mode, mode); } catch (e) { /* ignorera */ }
   }
 
@@ -202,7 +197,6 @@ const App = (() => {
   const changeListeners = [];
   function onChange(fn) { changeListeners.push(fn); }
   function changed() {
-    if (mode !== 'personal') return;
     changeListeners.forEach(fn => { try { fn(state); } catch (e) { console.error(e); } });
   }
 
@@ -218,21 +212,12 @@ const App = (() => {
   function applyRemote(data) {
     const next = migrate(data);
     if (!next) return false;
-    mode = 'personal';
     state = next;
     save();
     render();
     return true;
   }
   function readPersonal() { return read(KEYS.personal); }
-
-  function setMode(next) {
-    save();
-    mode = next;
-    state = next === 'demo' ? createDemoState() : (migrate(read(KEYS.personal)) || emptyState());
-    save();
-    render();
-  }
 
   function replaceState(next) {
     state = migrate(next) || emptyState();
@@ -243,78 +228,10 @@ const App = (() => {
 
   function resetAll() {
     try { Object.values(KEYS).forEach(k => localStorage.removeItem(k)); } catch (e) { /* ignorera */ }
-    mode = 'personal';
     state = emptyState();
     save();
     changed();
     render();
-  }
-
-  // ---------- Exempeldata ----------
-  function createDemoState() {
-    const s = emptyState();
-    const now = today();
-    const Y = now.getFullYear();
-    const curM = now.getMonth();
-    let seed = 11;
-    const rand = () => (seed = (seed * 16807) % 2147483647) / 2147483647;
-
-    s.accounts = [
-      { id: uid(), name: 'Lönekonto', type: 'checking', startBalance: 4000, categories: [], archived: false },
-      { id: uid(), name: 'Sparkonto med ränta', type: 'savings', startBalance: 60000, categories: ['Sparande'], archived: false },
-      { id: uid(), name: 'Investeringskonto', type: 'investment', startBalance: 42000, categories: [], archived: false },
-    ];
-    const checking = s.accounts[0].id;
-    s.settings.defaultAccountId = checking;
-
-    s.defaultBudget = { Lön: 42100, Boende: 8500, Mat: 3500, Transport: 1800, Livsstil: 2800, Hälsa: 1200, Utbildning: 500, Sparande: 4500, Skulder: 2675 };
-    for (let m = 0; m < 12; m++) s.budgets[`${Y}-${pad2(m + 1)}`] = { ...s.defaultBudget };
-
-    const tx = [];
-    const add = (m, d, type, category, title, amount, recurring = false, extra = {}) => {
-      const date = new Date(Y, m, d);
-      if (date > now) return;
-      tx.push({ id: uid(), date: iso(date), type, category, title, accountId: checking, amount: Math.round(amount), recurring, ...extra });
-    };
-    for (let m = 0; m <= curM; m++) {
-      add(m, 10, 'income', 'Lön', 'Ateljé Norr AB', 21050, true);
-      add(m, 25, 'income', 'Lön', 'Ateljé Norr AB', 21050, true);
-      add(m, 1, 'expense', 'Boende', 'Hyra', 7500, true);
-      add(m, 4, 'expense', 'Mat', 'ICA', 700 + rand() * 500);
-      add(m, 12, 'expense', 'Mat', 'Coop', 600 + rand() * 500);
-      add(m, 21, 'expense', 'Mat', 'Willys', 700 + rand() * 500);
-      add(m, 6, 'expense', 'Transport', 'Månadskort', 950, true);
-      if (rand() > 0.5) add(m, 16, 'expense', 'Transport', 'Taxi', 150 + rand() * 300);
-      add(m, 8, 'expense', 'Livsstil', 'Restaurang', 400 + rand() * 700);
-      add(m, 19, 'expense', 'Livsstil', 'Kläder', 300 + rand() * 900);
-      add(m, 14, 'expense', 'Hälsa', 'Gym', 425, true);
-      if (m % 3 === 0) add(m, 22, 'expense', 'Utbildning', 'Kursbok', 350);
-      add(m, 24, 'expense', 'Skulder', 'Reskort avbetalning', 625, true, { debtId: 'demo-travel' });
-      add(m, 28, 'expense', 'Skulder', 'CSN', 2050, true, { debtId: 'demo-student' });
-      add(m, 26, 'expense', 'Sparande', 'Överföring till buffert', 3000, true);
-    }
-    s.transactions = tx.sort((a, b) => b.date.localeCompare(a.date));
-
-    const debtTravel = { id: 'demo-travel', name: 'Reskort', original: 9000, adjust: 0, categories: [], apr: 19.99, installment: 625, extra: 0, payDay: 24, start: `${Y}-01-01`, end: '', notes: '' };
-    const debtStudent = { id: 'demo-student', name: 'Studielån', original: 86000, adjust: 0, categories: [], apr: 4.25, installment: 2050, extra: 0, payDay: 28, start: `${Y - 2}-09-01`, end: '', notes: '' };
-    s.debts = [debtTravel, debtStudent];
-
-    const mk = ym(now);
-    s.bills = [
-      { id: uid(), name: 'Hyra', amount: 7500, dueDate: `${mk}-01`, recurrence: 'monthly', category: 'Boende', accountId: checking },
-      { id: uid(), name: 'Streamingtjänst', amount: 119, dueDate: `${mk}-17`, recurrence: 'monthly', category: 'Livsstil', accountId: checking },
-      { id: uid(), name: 'Reskort', amount: 625, dueDate: `${mk}-24`, recurrence: 'monthly', category: 'Skulder', accountId: checking, debtId: debtTravel.id },
-      { id: uid(), name: 'Studielån', amount: 2050, dueDate: `${mk}-28`, recurrence: 'monthly', category: 'Skulder', accountId: checking, debtId: debtStudent.id },
-    ];
-
-    s.goals = [
-      { id: uid(), name: 'Buffert', target: 120000, startAmount: 60000, categories: ['Sparande'], date: `${Y + 1}-03-01`, accountId: s.accounts[1].id, notes: '' },
-      { id: uid(), name: 'Resa till Portugal', target: 27500, startAmount: 16000, categories: [], date: `${Y + 1}-04-01`, accountId: '', notes: '' },
-    ];
-
-    s.paycheck = { start: `${mk}-01`, end: `${mk}-${pad2(daysInMonth(mk))}`, income: 42100, alloc: { ...s.defaultBudget } };
-    s.forecast = { start: 10000, monthly: 1500, years: 10, rate: 5 };
-    return s;
   }
 
   // ---------- Budgetperioder ----------
@@ -1071,7 +988,7 @@ const App = (() => {
         <button class="btn btn-primary" id="addTxBtn">${icon('plus', 14)} Lägg till transaktion</button>
       </div>
     </div>
-    ${mode === 'demo' ? `<div class="demo-banner"><span><b>✦ Exempeldata</b> · Exempelläget är skilt från dina egna uppgifter. Avsluta för att komma tillbaka till dem.</span><button class="btn btn-small" id="exitDemo">Avsluta exempelläge</button></div>` : ''}`;
+`;
   }
 
   function render() {
@@ -1094,8 +1011,6 @@ const App = (() => {
     root.innerHTML = topbarHTML(p) + `<div class="page-body">${body}</div>`;
     root.querySelector('#currencySelect').addEventListener('change', e => update(s => { s.settings.currency = e.target.value; }));
     root.querySelector('#addTxBtn').addEventListener('click', () => openTransactionDialog());
-    const exit = root.querySelector('#exitDemo');
-    if (exit) exit.addEventListener('click', () => setMode('personal'));
     if (p.mount) {
       try { p.mount(root.querySelector('.page-body'), state); } catch (err) { console.error(err); }
     }
@@ -1131,7 +1046,7 @@ const App = (() => {
   }
 
   return {
-    page, start, update, save, render, setMode, replaceState, resetAll, onChange, applyRemote, readPersonal,
+    page, start, update, save, render, replaceState, resetAll, onChange, applyRemote, readPersonal,
     get state() { return state; },
     get mode() { return mode; },
     get storageKeys() { return KEYS; },

@@ -120,12 +120,6 @@ button, input, select, textarea { font: inherit; color: inherit; }
   padding: 8px 28px 8px 12px; font-size: 12.5px; cursor: pointer;
 }
 
-.demo-banner {
-  display: flex; justify-content: space-between; align-items: center; gap: 12px; flex-wrap: wrap;
-  background: var(--banner); border-radius: 12px;
-  padding: 10px 14px; margin-bottom: 18px; font-size: 12.5px;
-}
-
 /* ---------- Typografi ---------- */
 .overline {
   font-size: 10px; font-weight: 600; letter-spacing: 0.15em; text-transform: uppercase; color: var(--muted);
