@@ -404,21 +404,46 @@ const App = (() => {
       return from ? [{ accountId: from, amount: -t.amount }] : [];
     },
 
-    // { kontoId: saldo } för alla konton, eventuellt bara med transaktioner t.o.m. ett datum
-    balances(until = '') {
+    // Senaste marknadsvärdet för ett investeringskonto (t.o.m. ett datum), eller null
+    valuationAt(a, until = '') {
+      if (a.type !== 'investment') return null;
+      return (a.valuations || []).filter(v => !until || v.date <= until)
+        .reduce((best, v) => (!best || v.date >= best.date ? v : best), null);
+    },
+    /**
+     * { kontoId: saldo } för alla konton, eventuellt bara t.o.m. ett datum.
+     * Investeringskonton med ett inlagt marknadsvärde: värdet + rörelser efter den dagen.
+     * deposited = true ger i stället bara det som satts in (startsaldo + rörelser).
+     */
+    balances(until = '', deposited = false) {
       const out = {};
-      state.accounts.forEach(a => { out[a.id] = Number(a.startBalance) || 0; });
+      const since = {};
+      state.accounts.forEach(a => {
+        const v = deposited ? null : calc.valuationAt(a, until);
+        out[a.id] = v ? Number(v.value) || 0 : Number(a.startBalance) || 0;
+        since[a.id] = v ? v.date : '';
+      });
       for (const t of state.transactions) {
         if (until && t.date > until) continue;
-        for (const m of calc.txMoves(t)) if (m.accountId in out) out[m.accountId] += m.amount;
+        for (const m of calc.txMoves(t)) {
+          if (!(m.accountId in out) || (since[m.accountId] && t.date <= since[m.accountId])) continue;
+          out[m.accountId] += m.amount;
+        }
       }
       Object.keys(out).forEach(k => { out[k] = Math.round(out[k] * 100) / 100; });
       return out;
     },
-    // Aktiva konton med uträknat saldo
+    // Aktiva konton med uträknat saldo. Investeringskonton får även insatt belopp och avkastning.
     accounts() {
       const b = calc.balances();
-      return state.accounts.filter(a => !a.archived).map(a => ({ ...a, balance: b[a.id] || 0 }));
+      const dep = calc.balances('', true);
+      return state.accounts.filter(a => !a.archived).map(a => {
+        const valuation = calc.valuationAt(a);
+        const balance = b[a.id] || 0;
+        return valuation
+          ? { ...a, balance, valuation, deposited: dep[a.id] || 0, gain: Math.round((balance - (dep[a.id] || 0)) * 100) / 100 }
+          : { ...a, balance };
+      });
     },
     // Transaktioner som rör ett konto, nyast först, med beloppet för just det kontot
     accountTx(id) {

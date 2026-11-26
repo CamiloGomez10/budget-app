@@ -27,16 +27,30 @@
     const rec = a.reconciled
       ? `Senast avstämt ${fmt.date(a.reconciled.date)}${a.reconciled.diff ? ` (justerat ${signed(a.reconciled.diff)})` : ' (stämde)'}`
       : 'Inte avstämt mot banken än';
+    const invest = a.type === 'investment';
+    const pct = a.deposited > 0 ? ` (${a.gain >= 0 ? '+' : '−'}${fmt.pct(Math.abs(a.gain) / a.deposited, 1)})` : '';
+    const gainLine = a.valuation
+      ? `<p class="acc-gain">Insatt ${fmt.money0(a.deposited)} · <span class="${a.gain < 0 ? 'neg' : 'pos'}">${signed(a.gain)}${pct}</span></p>`
+      : '';
+    const history = (a.valuations || []).slice().sort((x, y) => y.date.localeCompare(x.date));
 
-    return `<li class="acc-item">
-      <details data-acc="${a.id}" ${open.has(a.id) ? 'open' : ''}>
-        <summary class="acc-row">
-          ${ui.avatar(a.name || '?', TYPE_COLOR[a.type] || 'var(--dark)')}
-          <div class="acc-name"><b>${esc(a.name)}</b> ${isDef ? ui.pill('Standardkonto', 'soft') : ''}<p class="muted">${sub}</p></div>
-          <span class="acc-amount amount ${a.balance < 0 ? 'neg' : ''}">${fmt.money(a.balance)}</span>
-          <span class="acc-chevron" aria-hidden="true">${ui.icon('down', 14)}</span>
-        </summary>
-        <div class="acc-detail">
+    // Investeringskonton: logga marknadsvärdet. Övriga konton: stäm av mot banken.
+    const topBlock = invest ? `
+          <div class="acc-reconcile">
+            <p class="field-label">Uppdatera värde</p>
+            <p class="muted">${a.valuation
+              ? `Senast ${fmt.date(a.valuation.date)}: ${fmt.money(a.valuation.value)}. Insättningar efter det läggs till automatiskt tills du uppdaterar igen.`
+              : 'Skriv in vad kontot är värt enligt banken. Utan värde visas bara det du har satt in.'}</p>
+            <div class="acc-inline acc-value">
+              <input type="date" data-value-date="${a.id}" value="${iso(today())}" required aria-label="Datum för värdet">
+              ${ui.moneyInput(`data-value="${a.id}" placeholder="Värde" aria-label="Värde enligt banken för ${esc(a.name)}"`)}
+              <button class="btn btn-secondary btn-small" data-value-save="${a.id}">Spara värde</button>
+            </div>
+            ${history.length ? `<ul class="rows acc-tx acc-values">${history.slice(0, 6).map(v => `<li>
+              <span class="acc-tx-name">${fmt.date(v.date)}</span>
+              <span class="acc-value-right"><b>${fmt.money(v.value)}</b>
+              <button class="icon-btn" data-value-del="${a.id}" data-date="${v.date}" aria-label="Ta bort värdet ${fmt.date(v.date)}">${ui.icon('x', 12)}</button></span></li>`).join('')}</ul>` : ''}
+          </div>` : `
           <div class="acc-reconcile">
             <p class="field-label">Stäm av mot banken</p>
             <p class="muted">${rec}</p>
@@ -44,14 +58,24 @@
               ${ui.moneyInput(`data-bank="${a.id}" placeholder="Saldo enligt banken" aria-label="Saldo enligt banken för ${esc(a.name)}"`)}
               <button class="btn btn-secondary btn-small" data-reconcile="${a.id}">Stäm av</button>
             </div>
-          </div>
-
+          </div>`;
+    return `<li class="acc-item">
+      <details data-acc="${a.id}" ${open.has(a.id) ? 'open' : ''}>
+        <summary class="acc-row">
+          ${ui.avatar(a.name || '?', TYPE_COLOR[a.type] || 'var(--dark)')}
+          <div class="acc-name"><b>${esc(a.name)}</b> ${isDef ? ui.pill('Standardkonto', 'soft') : ''}<p class="muted">${sub}</p>${gainLine}</div>
+          <span class="acc-amount amount ${a.balance < 0 ? 'neg' : ''}">${fmt.money(a.balance)}</span>
+          <span class="acc-chevron" aria-hidden="true">${ui.icon('down', 14)}</span>
+        </summary>
+        <div class="acc-detail">${topBlock}
           <div class="form-grid">
             ${ui.field('Namn', `<input data-name="${a.id}" value="${esc(a.name)}">`)}
             ${ui.field('Typ', `<select data-type="${a.id}">${Object.entries(TYPES).map(([k, v]) => `<option value="${k}" ${k === a.type ? 'selected' : ''}>${v}</option>`).join('')}</select>`)}
             ${ui.field('Startsaldo', ui.moneyInput(`data-start="${a.id}" value="${Number(a.startBalance) || 0}"`))}
           </div>
-          <p class="muted acc-help">Startsaldot är vad kontot hade när du började med budgeten. Saldot ovan = startsaldo + alla transaktioner.</p>
+          <p class="muted acc-help">${invest
+            ? 'Startsaldot är vad du hade satt in när du började med budgeten. Insatt = startsaldo + alla insättningar och uttag.'
+            : 'Startsaldot är vad kontot hade när du började med budgeten. Saldot ovan = startsaldo + alla transaktioner.'}</p>
 
           ${cats.length ? `<div class="acc-cats">
             <p class="field-label">Sparkategorier som hamnar på det här kontot</p>
@@ -167,10 +191,23 @@
       });
 
       root.addEventListener('click', async e => {
-        const btn = e.target.closest('button[data-reconcile], button[data-default], button[data-remove], button[data-restore]');
+        const btn = e.target.closest('button[data-reconcile], button[data-default], button[data-remove], button[data-restore], button[data-value-save], button[data-value-del]');
         if (!btn) return;
-        const { reconcile, default: def, remove, restore } = btn.dataset;
+        const { reconcile, default: def, remove, restore, valueSave, valueDel } = btn.dataset;
 
+        if (valueSave) {
+          const input = root.querySelector(`[data-value="${valueSave}"]`);
+          const date = root.querySelector(`[data-value-date="${valueSave}"]`).value || iso(today());
+          if (input.value === '') { input.focus(); return; }
+          const value = Math.round((Number(input.value) || 0) * 100) / 100;
+          // Ett värde per dag: samma datum skriver över
+          edit(valueSave, a => { a.valuations = [...(a.valuations || []).filter(v => v.date !== date), { date, value }]; });
+          return;
+        }
+        if (valueDel) {
+          edit(valueDel, a => { a.valuations = (a.valuations || []).filter(v => v.date !== btn.dataset.date); });
+          return;
+        }
         if (reconcile) {
           const input = root.querySelector(`[data-bank="${reconcile}"]`);
           if (input.value === '') { input.focus(); return; }

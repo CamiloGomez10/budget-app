@@ -25,7 +25,8 @@ type Tx = {
   accountId?: string; toAccountId?: string; goalId?: string | null; debtId?: string | null;
   billId?: string; billMonth?: string; amount: number; recurring?: boolean;
 };
-type Account = { id: string; name: string; type: string; startBalance?: number; categories?: string[]; archived?: boolean };
+type Valuation = { date: string; value: number };
+type Account = { id: string; name: string; type: string; startBalance?: number; categories?: string[]; archived?: boolean; valuations?: Valuation[] };
 type Category = { name: string; parent?: string; group?: string; debt?: boolean; color?: string };
 type Goal = { id: string; name: string; target: number; startAmount?: number; categories?: string[]; date?: string };
 type Debt = { id: string; name: string; original?: number; adjust?: number; categories?: string[] };
@@ -115,11 +116,33 @@ function makeCalc(state: State) {
     }
     return from ? [{ accountId: from, amount: -t.amount }] : [];
   }
-  function accounts() {
+  // Senaste marknadsvärdet för ett investeringskonto, eller null
+  const valuationAt = (a: Account) => a.type !== "investment" ? null
+    : (a.valuations || []).reduce<Valuation | null>((best, v) => (!best || v.date >= best.date ? v : best), null);
+  // Saldo: startsaldo + rörelser. Investeringskonto med värde: värdet + rörelser efter den dagen.
+  function balances(deposited: boolean) {
     const out: Record<string, number> = {};
-    state.accounts.forEach((a) => { out[a.id] = Number(a.startBalance) || 0; });
-    for (const t of state.transactions) for (const m of txMoves(t)) if (m.accountId in out) out[m.accountId] += m.amount;
-    return state.accounts.filter((a) => !a.archived).map((a) => ({ ...a, balance: round(out[a.id] || 0) }));
+    const since: Record<string, string> = {};
+    state.accounts.forEach((a) => {
+      const v = deposited ? null : valuationAt(a);
+      out[a.id] = v ? Number(v.value) || 0 : Number(a.startBalance) || 0;
+      since[a.id] = v ? v.date : "";
+    });
+    for (const t of state.transactions) {
+      for (const m of txMoves(t)) {
+        if (!(m.accountId in out) || (since[m.accountId] && t.date <= since[m.accountId])) continue;
+        out[m.accountId] += m.amount;
+      }
+    }
+    return out;
+  }
+  function accounts() {
+    const b = balances(false), dep = balances(true);
+    return state.accounts.filter((a) => !a.archived).map((a) => {
+      const valuation = valuationAt(a);
+      const balance = round(b[a.id] || 0);
+      return { ...a, balance, valuation, deposited: round(dep[a.id] || 0), gain: valuation ? round(balance - (dep[a.id] || 0)) : null };
+    });
   }
   const goalOf = (t: Tx) => {
     if (t.goalId) return state.goals.find((g) => g.id === t.goalId) || null;
@@ -377,12 +400,41 @@ function buildServer(supabase: Db, userId: string) {
     const bills = [];
     for (let k = from.slice(0, 7); k <= to.slice(0, 7); k = addMonths(k, 1)) bills.push(...c.billsForMonth(k).filter((b) => b.date >= from && b.date <= to));
     return text({
-      accounts: accs.map((a) => ({ name: a.name, balance: a.balance })),
+      accounts: accs.map((a) => ({
+        name: a.name, type: a.type, balance: a.balance,
+        ...(a.valuation ? { deposited: a.deposited, gain: a.gain, value_last_updated: a.valuation.date } : {}),
+      })),
       goals: c.goals().map((g) => ({ name: g.name, saved: g.current, target: g.target, deadline: g.date || null })),
       debts: debts.map((d) => ({ name: d.name, left: d.balance, paid: d.paid })),
       assets: round(assets), total_debt: round(totalDebt), net_worth: round(assets - totalDebt),
       upcoming_bills: bills.sort((a, b) => a.date.localeCompare(b.date)),
     });
+  });
+
+  server.registerTool("update_account_value", {
+    title: "Uppdatera ett investeringskontos värde",
+    description: "Spara vad ett investeringskonto (t.ex. ISK eller fond) är värt enligt banken ett visst datum. Använd när användaren säger vad kontot är värt. Insättningar efter datumet läggs till automatiskt tills nästa uppdatering.",
+    inputSchema: z.object({
+      account: z.string().describe("Kontonamn (måste vara av typen investering)"),
+      value: z.number().describe("Värdet i kronor enligt banken"),
+      date: DATE.optional().describe("Utelämna för idag"),
+    }),
+    annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: true, openWorldHint: false },
+  }, async (i) => {
+    try {
+      const out = await modify(supabase, userId, (state) => {
+        const a = accountByName(state, i.account);
+        if (!a) throw new Error(`Inget konto heter "${i.account}".`);
+        if (a.type !== "investment") throw new Error(`"${a.name}" är inte ett investeringskonto. Ändra kontotypen i appen först.`);
+        const date = i.date || todayISO();
+        if (!isDate(date)) throw new Error("Ogiltigt datum.");
+        const value = round(i.value);
+        a.valuations = [...(a.valuations || []).filter((v) => v.date !== date), { date, value }];
+        const acc = makeCalc(state).accounts().find((x) => x.id === a.id)!;
+        return { account: a.name, date, value, deposited: acc.deposited, gain: acc.gain };
+      });
+      return text({ result: "Värdet är sparat.", ...out });
+    } catch (e) { return fail((e as Error).message); }
   });
 
   server.registerTool("create_transactions", {
