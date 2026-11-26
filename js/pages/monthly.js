@@ -51,12 +51,11 @@
     return `<tr class="mon-row" data-cat="${n}" data-kind="${kind}">
       <td>
         <div class="mon-cat">
-          <div class="mon-cat-line">
-            <span class="mon-grip" tabindex="0" role="button" aria-label="Flytta ${n}. Dra, eller använd pil upp och pil ner">${GRIP}</span>
-            <b>${n}</b>${shared ? ui.pill('Delad', 'soft') : ''}
+          <span class="mon-grip" tabindex="0" role="button" aria-label="Flytta ${n}. Dra, eller använd pil upp och pil ner">${GRIP}</span>
+          <div class="mon-cat-body">
+            <div class="mon-cat-line"><b>${n}</b>${shared ? ui.pill('Delad', 'soft') : ''}</div>
+            <div class="mon-cat-bar"><span class="mon-pct">${r.planned > 0 ? fmt.pct(share) : '–'}</span>${ui.progress(share, color)}</div>
           </div>
-          <p class="muted">${fmt.money(r.actual)} av ${fmt.money(r.planned)}${r.planned > 0 ? ` · ${fmt.pct(share)}` : ''}</p>
-          ${ui.progress(share, color)}
         </div>
       </td>
       <td>${planCell}</td>
