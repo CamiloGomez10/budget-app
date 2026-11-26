@@ -31,23 +31,38 @@
   // Skillnad: för inkomster är mer än planerat bra, för utgifter är mindre bra
   const diffOf = (kind, planned, actual) => (kind === 'income' ? actual - planned : planned - actual);
 
-  function rowHTML(r, kind) {
+  function rowHTML(r, kind, key) {
     const share = r.planned > 0 ? r.actual / r.planned : 0;
     const diff = diffOf(kind, r.planned, r.actual);
     const color = kind === 'income' ? 'var(--dark)' : r.color;
+    const shared = kind === 'expense' && calc.isShared(r.name);
+    const n = esc(r.name);
+    // Delad kategori: hela beloppet + din del + den andras del. Din del räknas i budgeten.
+    let planCell = ui.moneyInput(`class="mon-input" data-cat="${n}" min="0" value="${r.planned || 0}" aria-label="Planerat för ${n}"`);
+    if (shared) {
+      const total = calc.sharedTotal(key, r.name);
+      const partner = calc.partnerName();
+      planCell = `<div class="mon-share">
+        ${ui.moneyInput(`class="mon-total" data-cat="${n}" min="0" value="${total ?? ''}" placeholder="Hela beloppet" aria-label="Hela beloppet för ${n}"`)}
+        <div class="mon-share-parts">
+          <label><span>Du</span>${ui.moneyInput(`class="mon-mine" data-cat="${n}" value="${r.planned || 0}" aria-label="Din del av ${n}"`)}</label>
+          <label><span>${esc(partner)}</span>${ui.moneyInput(`class="mon-partner" data-cat="${n}" value="${total != null ? Math.round((total - r.planned) * 100) / 100 : ''}" aria-label="${esc(partner)}s del av ${n}"`)}</label>
+        </div>
+      </div>`;
+    }
     return `<tr class="mon-row">
       <td>
-        <b>${esc(r.name)}</b>
+        <b>${n}</b>${shared ? ` ${ui.pill('Delad', 'soft')}` : ''}
         <p class="muted">${fmt.money(r.actual)} av ${fmt.money(r.planned)}${r.planned > 0 ? ` · ${fmt.pct(share)}` : ''}</p>
         ${ui.progress(share, color)}
       </td>
-      <td>${ui.moneyInput(`class="mon-input" data-cat="${esc(r.name)}" min="0" value="${r.planned || 0}" aria-label="Planerat för ${esc(r.name)}"`)}</td>
+      <td>${planCell}</td>
       <td class="mon-num">${fmt.money(r.actual)}</td>
       <td class="mon-num"><b class="${diff < 0 ? 'neg' : ''}">${fmt.money(diff)}</b></td>
     </tr>`;
   }
 
-  function groupHTML(g) {
+  function groupHTML(g, key) {
     const planned = sum(g.items.map(r => r.planned));
     const actual = sum(g.items.map(r => r.actual));
     const diff = diffOf(g.kind, planned, actual);
@@ -58,7 +73,7 @@
         <td class="mon-num">${fmt.money(actual)}</td>
         <td class="mon-num"><span class="${diff < 0 ? 'neg' : ''}">${fmt.money(diff)}</span></td>
       </tr>
-      ${g.items.map(r => rowHTML(r, g.kind)).join('')}
+      ${g.items.map(r => rowHTML(r, g.kind, key)).join('')}
     </tbody>`;
   }
 
@@ -100,7 +115,7 @@
         <div class="mon-table-wrap">
           <table class="mon-table">
             <thead><tr><th>Kategori</th><th>Planerat</th><th>Faktiskt</th><th>Skillnad</th></tr></thead>
-            ${groups.map(groupHTML).join('')}
+            ${groups.map(g => groupHTML(g, key)).join('')}
             <tfoot>
               <tr><td>Inkomster</td><td class="mon-num">${fmt.money(incPlanned)}</td><td class="mon-num">${fmt.money(incActual)}</td><td></td></tr>
               <tr><td>Utgifter</td><td class="mon-num">${fmt.money(expPlanned)}</td><td class="mon-num">${fmt.money(expActual)}</td><td class="mon-num"><b class="${expPlanned - expActual < 0 ? 'neg' : ''}">${fmt.money(expPlanned - expActual)}</b></td></tr>
@@ -169,15 +184,46 @@
         offset = mv === 0 ? 0 : offset + mv;
         App.render();
       }));
-      // Första ändringen i en period kopierar den budget som visas (från en tidigare period) till perioden
+      // Första ändringen i en period kopierar den budget som visas (från en tidigare period)
+      // till perioden, även hela beloppen för delade kategorier.
+      const ensure = st => {
+        const src = calc.plannedFrom(key);
+        if (!st.sharedTotals) st.sharedTotals = {};
+        if (!st.budgets[key]) {
+          st.budgets[key] = { ...calc.planned(key) };
+          st.sharedTotals[key] = { ...(src ? st.sharedTotals[src] || {} : {}) };
+        }
+        if (!st.sharedTotals[key]) st.sharedTotals[key] = {};
+      };
       root.querySelectorAll('.mon-input').forEach(input => {
         input.addEventListener('change', () => {
           const value = Math.max(0, Number(input.value) || 0);
-          App.update(st => {
-            if (!st.budgets[key]) st.budgets[key] = { ...calc.planned(key) };
-            st.budgets[key][input.dataset.cat] = value;
-          });
+          App.update(st => { ensure(st); st.budgets[key][input.dataset.cat] = value; });
         });
+      });
+
+      // Delade kategorier: hela beloppet delas 50/50. Ändrar du en del ändras den andra
+      // så att summan blir hela beloppet. Sparas när du lämnar fältet.
+      const r2 = v => Math.round(v * 100) / 100;
+      root.querySelectorAll('.mon-share').forEach(box => {
+        const cat = box.querySelector('.mon-total').dataset.cat;
+        const total = box.querySelector('.mon-total'), mine = box.querySelector('.mon-mine'), other = box.querySelector('.mon-partner');
+        total.addEventListener('input', () => {
+          const sp = calc.splitShare(Number(total.value) || 0, 0.5);
+          mine.value = sp.mine;
+          other.value = sp.partner;
+        });
+        mine.addEventListener('input', () => { if (total.value !== '') other.value = r2((Number(total.value) || 0) - (Number(mine.value) || 0)); });
+        other.addEventListener('input', () => { if (total.value !== '') mine.value = r2((Number(total.value) || 0) - (Number(other.value) || 0)); });
+        const commit = () => App.update(st => {
+          ensure(st);
+          const t = total.value === '' ? null : Math.max(0, r2(Number(total.value) || 0));
+          let m = Math.max(0, r2(Number(mine.value) || 0));
+          if (t != null) m = Math.min(m, t);
+          st.budgets[key][cat] = m;
+          if (t == null) delete st.sharedTotals[key][cat]; else st.sharedTotals[key][cat] = t;
+        });
+        [total, mine, other].forEach(el => el.addEventListener('change', commit));
       });
       root.querySelectorAll('input[data-group]').forEach(inp => {
         inp.addEventListener('change', () => {

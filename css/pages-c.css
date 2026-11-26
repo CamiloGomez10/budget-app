@@ -62,15 +62,4 @@
 
 
 /* Delade kostnader */
-.set-share { margin: 10px 0 14px; }
-.set-share li { display: grid; grid-template-columns: minmax(80px, 0.8fr) minmax(150px, 1.2fr) minmax(190px, 1.2fr) auto auto; gap: 10px; align-items: center; }
-.set-share-name { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.set-share-val { display: flex; align-items: center; gap: 6px; min-width: 0; }
-.set-share-val .stepper { flex: 0 0 118px; width: 118px; }
-.set-share-val .muted { font-size: 12px; white-space: nowrap; }
-.set-share-round { font-size: 13px; white-space: nowrap; }
-@media (max-width: 760px) {
-  .set-share li { grid-template-columns: 1fr auto; }
-  .set-share li > select, .set-share-val, .set-share-round { grid-column: 1 / -1; }
-  .set-share li > .icon-btn { grid-row: 1; grid-column: 2; }
-}
+.set-share-group { margin-top: 12px; display: flex; flex-direction: column; gap: 4px; }

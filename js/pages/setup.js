@@ -80,7 +80,8 @@
       s.categories = s.categories.filter(c => c.name !== name);
       s.incomeCategories = s.incomeCategories.filter(c => c.name !== name);
       Object.values(s.budgets).forEach(b => { delete b[name]; });
-      if (s.settings.sharing?.rules) delete s.settings.sharing.rules[name];
+      if (s.settings.sharing?.categories) s.settings.sharing.categories = s.settings.sharing.categories.filter(c => c !== name);
+      Object.values(s.sharedTotals || {}).forEach(b => { delete b[name]; });
       if (s.paycheck && s.paycheck.alloc) delete s.paycheck.alloc[name];
       [...s.accounts, ...s.goals, ...s.debts].forEach(x => { x.categories = (x.categories || []).filter(c => c !== name); });
       s.bills.forEach(b => { if (b.category === name) b.category = replacement || ''; });
@@ -210,33 +211,18 @@
           </div>`,
       });
 
-      // Delade kostnader: regler per kategori för hur mycket du betalar
+      // Delade kostnader: bocka i vilka kategorier du delar
       const sharing = s.settings.sharing || {};
-      const rules = sharing.rules || {};
+      const sharedCats = new Set(sharing.categories || []);
       const partner = App.calc.partnerName();
-      const ruleCats = Object.keys(rules).filter(n => s.categories.some(c => c.name === n));
-      const freeCats = s.categories.filter(c => !rules[c.name]);
-      const MODES = [['percent', 'Procent'], ['partnerFixed', `${partner} betalar fast belopp`], ['meFixed', 'Jag betalar fast belopp']];
       const shareCard = ui.card({
         overline: 'Delade kostnader', title: `Det du delar med ${esc(partner)}`,
-        body: `<p class="muted set-gap">Ni betalar var och en er egen del. När du lägger in en utgift i en delad kategori skriver du in <b>hela beloppet</b>, så räknar appen fram din del. Bara din del räknas i budgeten och dras från ditt konto. Andra utgifter kan du dela 50/50 genom att bocka i rutan när du lägger in dem.</p>
+        body: `<p class="muted set-gap">Bocka i det ni delar. Ni betalar var och en er egen del. I <b>Budget</b> och när du lägger in en utgift skriver du <b>hela beloppet</b>, så delas det 50/50 och du kan justera din del. Bara din del räknas i budgeten och dras från ditt konto.</p>
           ${ui.field('Delar med', `<input id="sharePartner" maxlength="30" value="${esc(sharing.partner || '')}" placeholder="Sambo">`)}
-          ${ruleCats.length ? `<ul class="rows set-share">${ruleCats.map(n => {
-            const r = rules[n];
-            return `<li>
-              <b class="set-share-name">${esc(n)}</b>
-              <select data-share-mode="${esc(n)}" aria-label="Regel för ${esc(n)}">${MODES.map(([k, v]) => `<option value="${k}" ${k === r.mode ? 'selected' : ''}>${esc(v)}</option>`).join('')}</select>
-              <span class="set-share-val">${r.mode === 'percent'
-                ? `<input type="number" min="0" max="100" step="1" data-share-value="${esc(n)}" value="${esc(r.value ?? 50)}" aria-label="Din andel i procent"><span class="muted">% din del</span>`
-                : ui.moneyInput(`data-share-value="${esc(n)}" value="${esc(r.value ?? 0)}" aria-label="Fast belopp"`)}</span>
-              ${r.mode === 'percent' ? `<label class="check set-share-round"><input type="checkbox" data-share-round="${esc(n)}" ${r.roundMine ? 'checked' : ''}> Jag tar jämna kronor</label>` : '<span></span>'}
-              <button class="icon-btn" data-share-del="${esc(n)}" aria-label="Sluta dela ${esc(n)}">${ui.icon('x', 14)}</button>
-            </li>`;
-          }).join('')}</ul>` : '<p class="muted">Inga delade kategorier än.</p>'}
-          <form class="set-add" id="shareForm">
-            ${ui.field('Dela kategori', `<select name="cat">${freeCats.map(c => `<option>${esc(c.name)}</option>`).join('')}</select>`)}
-            <button class="btn btn-secondary" type="submit" ${freeCats.length ? '' : 'disabled'}>${ui.icon('plus', 14)} Dela 50/50</button>
-          </form>`,
+          ${[...(s.parents || []), App.OTHER_PARENT].map(p => {
+            const list = s.categories.filter(c => (c.parent && s.parents.includes(c.parent) ? c.parent : App.OTHER_PARENT) === p);
+            return list.length ? `<div class="set-share-group"><p class="field-label">${esc(p)}</p><div class="acc-checks">${list.map(c => `<label class="check"><input type="checkbox" data-share-cat="${esc(c.name)}" ${sharedCats.has(c.name) ? 'checked' : ''}> ${esc(c.name)}</label>`).join('')}</div></div>` : '';
+          }).join('')}`,
       });
 
       const backup = ui.card({
@@ -252,28 +238,13 @@
       saved = false;
 
       // Delade kostnader
-      const setRules = fn => App.update(s => {
-        s.settings.sharing = s.settings.sharing || {};
-        s.settings.sharing.rules = s.settings.sharing.rules || {};
-        fn(s.settings.sharing.rules, s.settings.sharing);
-      });
-      root.querySelector('#sharePartner').addEventListener('change', e => setRules((r, sh) => { sh.partner = e.target.value.trim(); }));
-      root.querySelector('#shareForm').addEventListener('submit', e => {
-        e.preventDefault();
-        const cat = new FormData(e.target).get('cat');
-        if (cat) setRules(r => { r[cat] = { mode: 'percent', value: 50, roundMine: false }; });
-      });
-      root.querySelectorAll('[data-share-mode]').forEach(el => el.addEventListener('change', () => setRules(r => {
-        const n = el.dataset.shareMode;
-        r[n] = { mode: el.value, value: el.value === 'percent' ? 50 : 0, roundMine: false };
+      const setSharing = fn => App.update(st => { st.settings.sharing = st.settings.sharing || {}; fn(st.settings.sharing); });
+      root.querySelector('#sharePartner').addEventListener('change', e => setSharing(sh => { sh.partner = e.target.value.trim(); }));
+      root.querySelectorAll('[data-share-cat]').forEach(el => el.addEventListener('change', () => setSharing(sh => {
+        const list = new Set(sh.categories || []);
+        el.checked ? list.add(el.dataset.shareCat) : list.delete(el.dataset.shareCat);
+        sh.categories = [...list];
       })));
-      root.querySelectorAll('[data-share-value]').forEach(el => el.addEventListener('change', () => setRules(r => {
-        const n = el.dataset.shareValue;
-        const v = Number(el.value) || 0;
-        r[n].value = r[n].mode === 'percent' ? App.clamp(v, 0, 100) : Math.max(0, v);
-      })));
-      root.querySelectorAll('[data-share-round]').forEach(el => el.addEventListener('change', () => setRules(r => { r[el.dataset.shareRound].roundMine = el.checked; })));
-      root.querySelectorAll('[data-share-del]').forEach(el => el.addEventListener('click', () => setRules(r => { delete r[el.dataset.shareDel]; })));
       root.querySelector('#setBackup').addEventListener('click', () => {
         const payload = { app: 'budget', exportedAt: new Date().toISOString(), mode: App.mode, data: App.state };
         const blob = new Blob([JSON.stringify(payload, null, 2)], { type: 'application/json' });

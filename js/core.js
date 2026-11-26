@@ -90,6 +90,7 @@ const App = (() => {
       typesV: 1,                                               // kategorityper är satta (styr migreringen)
       incomeCategories: DEFAULT_INCOME.map(c => ({ ...c })),  // underkategorier för inkomster
       budgets: {},                 // { "2026-11": { Boende: 8500, ... } }
+      sharedTotals: {},            // delade kategorier: hela beloppet per period { "2026-11": { Hyra: 12400 } }
       // type transfer = flytt mellan egna konton (toAccountId), räknas inte i budgeten.
       // goalId/debtId kopplar till sparmål/skuld, billId + billMonth till en betald räkning.
       transactions: [],            // { id, date, type: income|expense|transfer, category, title, accountId, toAccountId, goalId, debtId, billId, billMonth, amount, recurring }
@@ -132,6 +133,12 @@ const App = (() => {
     delete out.forecast;          // sidan Sparprognos är borttagen
     delete out.noSpend;           // sidan Köpfri utmaning är borttagen
     delete out.defaultBudget;     // ingen standardbudget: en månad utan plan tar förra månadens
+    // Delade kostnader: tidigare regler per kategori blir en lista över delade kategorier
+    if (out.settings.sharing?.rules) {
+      out.settings.sharing.categories = [...new Set([...(out.settings.sharing.categories || []), ...Object.keys(out.settings.sharing.rules)])];
+      delete out.settings.sharing.rules;
+    }
+    if (!out.sharedTotals) out.sharedTotals = {};
     // Äldre data utan inkomstkategorier: hämta dem från befintliga inkomster
     if (!Array.isArray(s.incomeCategories)) {
       const names = [...new Set((s.transactions || []).filter(t => t.type === 'income').map(t => t.category).filter(Boolean))];
@@ -526,34 +533,29 @@ const App = (() => {
     isDebt: name => calc.categoryKind(name) === 'debt',
 
     // ---------- Delade kostnader (t.ex. med sambo) ----------
-    // Ni betalar var och en er egen del. En delad utgift sparar hela beloppet i `total`
-    // och din del i `amount`, så budget och konton bara räknar med din del.
-    // Regel per kategori i settings.sharing.rules:
-    //   { mode: 'percent', value: din andel i %, roundMine: du tar jämna kronor }
-    //   { mode: 'partnerFixed', value: hon/han betalar ett fast belopp, du resten }
-    //   { mode: 'meFixed', value: du betalar ett fast belopp, den andra resten }
+    // Ni betalar var och en er egen del. Du bockar i vilka kategorier ni delar.
+    // En delad utgift sparar hela beloppet i `total` och din del i `amount`, så budget
+    // och konton bara räknar med din del. I budgeten sparas hela beloppet per kategori i
+    // sharedTotals[period][kategori] och din del som vanligt i budgets[period][kategori].
     partnerName: () => (state.settings.sharing?.partner || '').trim() || 'Sambo',
-    shareRule: category => state.settings.sharing?.rules?.[category] || null,
-    splitAmount(total, rule) {
-      const r = rule || { mode: 'percent', value: 50 };
-      const t = Math.round((Number(total) || 0) * 100) / 100;
-      let mine;
-      if (r.mode === 'partnerFixed') mine = t - Math.min(Number(r.value) || 0, t);
-      else if (r.mode === 'meFixed') mine = Math.min(Number(r.value) || 0, t);
-      else {
-        mine = t * (Number(r.value ?? 50) || 0) / 100;
-        // Du tar den större delen i hela kronor, den andra får det som blir kvar med ören
-        mine = r.roundMine ? (t >= 0 ? Math.ceil(mine - 1e-9) : Math.floor(mine + 1e-9)) : Math.round(mine * 100) / 100;
-      }
-      mine = Math.round(mine * 100) / 100;
-      return { mine, partner: Math.round((t - mine) * 100) / 100 };
+    isShared: category => (state.settings.sharing?.categories || []).includes(category),
+    // Hela beloppet i budgeten för en delad kategori (följer samma period som budgeten)
+    sharedTotal(key, category) {
+      const src = calc.plannedFrom(key);
+      const v = src ? state.sharedTotals?.[src]?.[category] : undefined;
+      return v == null ? null : Number(v);
     },
-    shareLabel(rule) {
-      const r = rule || { mode: 'percent', value: 50 };
-      const p = calc.partnerName();
-      if (r.mode === 'partnerFixed') return `${p} betalar ${fmt.money0(r.value)}, du resten`;
-      if (r.mode === 'meFixed') return `Du betalar ${fmt.money0(r.value)}, ${p} resten`;
-      return `Du betalar ${fmt.num(r.value ?? 50)} %${r.roundMine ? ' (jämna kronor)' : ''}`;
+    // Din andel enligt budgetens fördelning, annars hälften
+    shareRatio(key, category) {
+      const total = calc.sharedTotal(key, category);
+      const mine = Number(calc.planned(key)[category]);
+      return total > 0 && Number.isFinite(mine) ? Math.min(1, Math.max(0, mine / total)) : 0.5;
+    },
+    // Dela ett belopp: din del avrundas till ören, den andra får resten
+    splitShare(total, ratio = 0.5) {
+      const t = Math.round((Number(total) || 0) * 100) / 100;
+      const mine = ratio === 0.5 ? Math.ceil(t * 50 - 1e-9) / 100 : Math.round(t * ratio * 100) / 100;
+      return { mine, partner: Math.round((t - mine) * 100) / 100 };
     },
     totalDebt: () => sum(calc.debts().map(d => d.balance)) + calc.negativeAccounts(),
     netWorth: () => calc.assets() - calc.totalDebt(),
@@ -882,7 +884,8 @@ const App = (() => {
     const goal0 = calc.goalOf(t), debt0 = calc.debtOf(t);
     const goals = state.goals, debts = state.debts;
     // Delad utgift: beloppsfältet visar hela beloppet. Ny post i en delad kategori är förifylld som delad.
-    const wasShared = editing ? t.total != null : !!(t.type === 'expense' && calc.shareRule(t.category));
+    const wasShared = editing ? t.total != null : !!(t.type === 'expense' && calc.isShared(t.category));
+    const partner = calc.partnerName();
     const amount0 = editing && t.total != null ? t.total : t.amount;
     dlg.innerHTML = `
       <form method="dialog" class="dialog-form" id="txForm">
@@ -903,8 +906,12 @@ const App = (() => {
           ${goals.length ? ui.field('Sparmål', `<select name="goalId" id="txGoal"><option value="">Inget</option>${goals.map(g => `<option value="${g.id}" ${goal0?.id === g.id ? 'selected' : ''}>${esc(g.name)}</option>`).join('')}</select>`, 'tx-f-goal') : ''}
           ${debts.length ? ui.field('Skuld', `<select name="debtId" id="txDebt"><option value="">Ingen</option>${debts.map(d => `<option value="${d.id}" ${debt0?.id === d.id ? 'selected' : ''}>${esc(d.name)}</option>`).join('')}</select>`, 'tx-f-debt') : ''}
           <div class="tx-share" id="txShare">
-            <label class="check"><input type="checkbox" name="shared" ${wasShared ? 'checked' : ''}> Delad med ${esc(calc.partnerName())}</label>
-            <p class="tx-share-out" id="txShareOut"></p>
+            <label class="check"><input type="checkbox" name="shared" ${wasShared ? 'checked' : ''}> Delad med ${esc(partner)}</label>
+            <div class="tx-share-split" id="txShareSplit">
+              ${ui.field('Din del', ui.moneyInput(`name="mine" step="any" value="${editing && t.total != null ? esc(t.amount) : ''}"`))}
+              ${ui.field(`${esc(partner)}s del`, ui.moneyInput(`name="partnerShare" step="any" value="${editing && t.total != null ? esc(Math.round((t.total - t.amount) * 100) / 100) : ''}"`))}
+              <p class="muted">Bara din del räknas i budgeten. Ändrar du en del justeras den andra så att summan blir hela beloppet.</p>
+            </div>
           </div>
           <p class="muted tx-move-hint" id="txMoveHint"></p>
           <label class="check tx-f-rec"><input type="checkbox" name="recurring" ${t.recurring ? 'checked' : ''}> Återkommande</label>
@@ -947,30 +954,37 @@ const App = (() => {
       hint.hidden = !hint.textContent;
       refreshShare();
     };
-    // Delad utgift: visa din och den andras del medan du skriver
+    // Delad utgift: hela beloppet delas enligt budgetens fördelning för kategorin (annars 50/50).
+    // Ändrar du din del ändras den andras, och tvärtom, så att summan blir hela beloppet.
+    const r2 = v => Math.round(v * 100) / 100;
+    const fillSplit = () => {
+      const total = Number($('[name=amount]').value);
+      if (!$('[name=amount]').value) { $('[name=mine]').value = ''; $('[name=partnerShare]').value = ''; return; }
+      const ratio = calc.shareRatio(period.keyOf($('[name=date]').value || iso(today())), catSelect.value);
+      const sp = calc.splitShare(total, ratio);
+      $('[name=mine]').value = sp.mine;
+      $('[name=partnerShare]').value = sp.partner;
+    };
     const refreshShare = () => {
       const on = typeOf() === 'expense';
       show('tx-share', on);
       const shared = on && $('[name=shared]').checked;
       $('#txAmountLabel').textContent = shared ? 'Hela beloppet' : 'Belopp';
-      const out = $('#txShareOut');
-      if (!shared) { out.textContent = ''; return; }
-      const rule = calc.shareRule(catSelect.value);
-      const total = Number($('[name=amount]').value);
-      const p = calc.partnerName();
-      if (!$('[name=amount]').value || !total) { out.innerHTML = `<span class="muted">${esc(calc.shareLabel(rule))}${rule ? '' : ' (ingen regel för kategorin)'}</span>`; return; }
-      const sp = calc.splitAmount(total, rule);
-      out.innerHTML = `Din del <b>${fmt.money(sp.mine)}</b> · ${esc(p)} <b>${fmt.money(sp.partner)}</b><br><span class="muted">${esc(calc.shareLabel(rule))}${rule ? '' : ' (ingen regel för kategorin)'}. Bara din del räknas i budgeten.</span>`;
+      $('#txShareSplit').hidden = !shared;
+      if (shared && $('[name=amount]').value && $('[name=mine]').value === '') fillSplit();
     };
     form.querySelectorAll('[name=type]').forEach(r => r.addEventListener('change', () => { fillCategories(); suggestLinks(); refresh(); }));
     catSelect.addEventListener('change', () => {
       // Byt till en kategori med regel: bocka i delad (för nya poster)
-      if (!editing && typeOf() === 'expense') $('[name=shared]').checked = !!calc.shareRule(catSelect.value);
+      if (!editing && typeOf() === 'expense') $('[name=shared]').checked = calc.isShared(catSelect.value);
+      if ($('[name=shared]').checked) fillSplit();
       suggestLinks();
       refresh();
     });
-    $('[name=shared]').addEventListener('change', refreshShare);
-    $('[name=amount]').addEventListener('input', refreshShare);
+    $('[name=shared]').addEventListener('change', () => { if ($('[name=shared]').checked) fillSplit(); refreshShare(); });
+    $('[name=amount]').addEventListener('input', () => { if ($('[name=shared]').checked) fillSplit(); });
+    $('[name=mine]').addEventListener('input', () => { $('[name=partnerShare]').value = r2(Number($('[name=amount]').value) - Number($('[name=mine]').value)); });
+    $('[name=partnerShare]').addEventListener('input', () => { $('[name=mine]').value = r2(Number($('[name=amount]').value) - Number($('[name=partnerShare]').value)); });
     fillCategories();
     refresh();
 
@@ -1004,8 +1018,9 @@ const App = (() => {
       if (type === 'transfer') tx.toAccountId = f.get('toAccountId');
       // Delad utgift: hela beloppet sparas i total, din del blir transaktionens belopp
       if (type === 'expense' && f.get('shared') === 'on') {
-        tx.total = Math.round(amount * 100) / 100;
-        tx.amount = calc.splitAmount(tx.total, calc.shareRule(tx.category)).mine;
+        tx.total = r2(amount);
+        const mine = f.get('mine');
+        tx.amount = mine === '' || mine == null ? calc.splitShare(tx.total, calc.shareRatio(period.keyOf(tx.date), tx.category)).mine : r2(Number(mine));
       }
       if (goalId !== undefined) tx.goalId = goalId;
       if (debtId !== undefined) tx.debtId = debtId;
@@ -1066,7 +1081,8 @@ const App = (() => {
       if (s.paycheck) swapKeys(s.paycheck.alloc);
       [...s.accounts, ...s.goals, ...s.debts].forEach(x => { x.categories = swapList(x.categories); });
       s.bills.forEach(b => { if (b.category === oldName) b.category = newName; });
-      if (s.settings.sharing?.rules) swapKeys(s.settings.sharing.rules);
+      if (s.settings.sharing?.categories) s.settings.sharing.categories = swapList(s.settings.sharing.categories);
+      Object.values(s.sharedTotals || {}).forEach(swapKeys);
     });
   }
   function renameParent(oldName, newName) {

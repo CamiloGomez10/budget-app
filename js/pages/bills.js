@@ -68,8 +68,9 @@
       // Räkningarna som förfaller inom perioden (lönemånad eller kalendermånad)
       // Delade räkningar (t.ex. hyra med sambo) räknas med din del
       const bills = calc.billsInRange(r.start, r.end).map(b => {
-        const rule = calc.shareRule(b.category);
-        return { ...b, mine: rule ? calc.splitAmount(b.amount, rule).mine : b.amount, shared: !!rule };
+        const shared = calc.isShared(b.category);
+        const mine = shared ? calc.splitShare(b.amount, calc.shareRatio(App.period.keyOf(b.date), b.category)).mine : b.amount;
+        return { ...b, mine, shared };
       });
       const total = sum(bills.map(b => b.mine));
       const paid = sum(bills.filter(b => b.isPaid).map(b => b.mine));

@@ -92,3 +92,10 @@
 .dash-alerts { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 8px; }
 .dash-alerts li { display: flex; gap: 10px; align-items: baseline; }
 .dash-alerts li::before { content: "•"; color: var(--rose); font-weight: 700; }
+
+/* Delade kategorier i budgeten */
+.mon-share { display: flex; flex-direction: column; gap: 6px; min-width: 190px; }
+.mon-share-parts { display: grid; grid-template-columns: 1fr 1fr; gap: 6px; }
+.mon-share-parts label { display: flex; flex-direction: column; gap: 2px; min-width: 0; }
+.mon-share-parts label > span:first-child { font-size: 11px; color: var(--muted); }
+.mon-share-parts .input-money input { font-size: 13px; }
