@@ -114,12 +114,43 @@ button, input, select, textarea { font: inherit; color: inherit; }
 .page-top { display: flex; justify-content: space-between; align-items: flex-end; gap: 16px; flex-wrap: wrap; margin-bottom: 16px; }
 .page-title { font-family: var(--serif); font-size: 34px; font-weight: 600; line-height: 1.1; }
 .page-actions { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
-.select-pill select {
-  appearance: none; -webkit-appearance: none;
-  background: var(--card) url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='10' height='6'%3E%3Cpath d='M1 1l4 4 4-4' stroke='%238b8178' fill='none' stroke-width='1.5'/%3E%3C/svg%3E") no-repeat right 10px center;
-  border: 1px solid var(--card-border); border-radius: 10px;
-  padding: 8px 28px 8px 12px; font-size: 12.5px; cursor: pointer;
+/* ---------- Egna listrutor (js/select.js) ---------- */
+.csel { position: relative; display: block; width: 100%; min-width: 0; }
+.csel-native { position: absolute; inset: 0; width: 100%; height: 100%; opacity: 0; pointer-events: none; }
+.csel-btn {
+  width: 100%; min-height: 38px; display: flex; align-items: center; justify-content: space-between; gap: 10px;
+  background: var(--white); border: 1px solid var(--card-border); border-radius: 10px;
+  padding: 8px 12px; font-weight: 600; font-size: 13px; color: var(--text); text-align: left; cursor: pointer;
+  transition: border-color .15s, box-shadow .15s;
 }
+.csel-btn:hover { border-color: var(--caramel); }
+.csel.is-open .csel-btn { border-color: var(--caramel); box-shadow: 0 0 0 3px rgba(176, 138, 90, 0.18); }
+.csel-btn:disabled { opacity: .55; cursor: default; }
+.csel-text { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.csel-chev { flex-shrink: 0; color: var(--muted); transition: transform .15s; }
+.csel.is-open .csel-chev { transform: rotate(180deg); color: var(--dark); }
+.csel-pill { display: inline-block; width: auto; }
+.csel-pill .csel-btn { background: var(--card); font-weight: 500; font-size: 12.5px; min-height: 0; padding: 8px 12px; }
+.csel-pop {
+  position: fixed; z-index: 1000; overflow-y: auto; overscroll-behavior: contain;
+  max-width: min(360px, calc(100vw - 16px));
+  background: var(--card); border: 1px solid var(--card-border); border-radius: 12px;
+  box-shadow: 0 12px 32px rgba(59, 37, 29, 0.18), 0 2px 6px rgba(59, 37, 29, 0.08);
+  padding: 6px; font-family: var(--sans); color: var(--text);
+  animation: csel-in .12s ease-out;
+}
+@keyframes csel-in { from { opacity: 0; transform: translateY(-4px); } to { opacity: 1; transform: none; } }
+.csel-opt {
+  display: flex; align-items: center; justify-content: space-between; gap: 12px;
+  padding: 8px 10px; border-radius: 8px; font-size: 13px; cursor: pointer; user-select: none;
+}
+.csel-opt.is-active { background: var(--tan-2); }
+.csel-opt.is-selected { font-weight: 600; color: var(--dark); }
+.csel-opt.is-disabled { opacity: .45; cursor: default; }
+.csel-opt svg { flex-shrink: 0; color: var(--dark); }
+.csel-group { padding: 10px 10px 4px; font-size: 10px; font-weight: 600; letter-spacing: 0.14em; text-transform: uppercase; color: var(--muted); }
+.csel-group:first-child { padding-top: 4px; }
+.csel-empty { padding: 8px 10px; font-size: 12.5px; color: var(--muted); }
 
 /* ---------- Typografi ---------- */
 .overline {
