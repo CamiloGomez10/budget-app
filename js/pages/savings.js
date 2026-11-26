@@ -117,7 +117,7 @@
       const share = target > 0 ? saved / target : 0;
       charts.ring(root.querySelector('#goalRing'), { share, size: 200, center: { value: fmt.pct(share), label: 'Finansierat' } });
 
-      root.addEventListener('click', e => {
+      root.addEventListener('click', async e => {
         const row = e.target.closest('[data-tx]');
         if (row) { const t = App.state.transactions.find(x => x.id === row.dataset.tx); if (t) App.openTransactionDialog({ ...t }); return; }
         const btn = e.target.closest('button');
@@ -139,7 +139,7 @@
           });
         } else if (btn.dataset.delete) {
           const g = goal(btn.dataset.delete);
-          if (App.confirm(`Ta bort målet "${g.name}"?`)) App.update(st => { st.goals = st.goals.filter(x => x.id !== g.id); });
+          if (await App.confirm(`Ta bort målet "${g.name}"?`)) App.update(st => { st.goals = st.goals.filter(x => x.id !== g.id); });
         }
       });
 

@@ -16,6 +16,8 @@ const SHELL = [
   './js/version.js',
   './js/select.js',
   './js/monthpicker.js',
+  './js/datepicker.js',
+  './js/stepper.js',
   './js/vendor/supabase.js',
   './js/core.js',
   './js/sync.js',

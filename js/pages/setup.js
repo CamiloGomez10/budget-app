@@ -93,7 +93,7 @@
       .filter(t => t.type !== 'transfer' && t.category === name)
       .sort((a, b) => b.date.localeCompare(a.date));
     if (!txOf().length) {
-      if (App.confirm(`Ta bort kategorin "${name}"?`)) removeCategory(name);
+      App.confirm(`Ta bort kategorin "${name}"?`).then(ok => { if (ok) removeCategory(name); });
       return;
     }
     let lastTarget = '';
@@ -339,9 +339,9 @@
           [s.parents[i], s.parents[j]] = [s.parents[j], s.parents[i]];
         });
       }));
-      root.querySelectorAll('[data-premove]').forEach(btn => btn.addEventListener('click', () => {
+      root.querySelectorAll('[data-premove]').forEach(btn => btn.addEventListener('click', async () => {
         const p = btn.dataset.premove;
-        if (!App.confirm(`Ta bort huvudkategorin "${p}"?`)) return;
+        if (!await App.confirm(`Ta bort huvudkategorin "${p}"?`)) return;
         App.update(s => { s.parents = s.parents.filter(x => x !== p); if (s.parentTypes) delete s.parentTypes[p]; });
       }));
       root.querySelector('#parentForm').addEventListener('submit', e => {

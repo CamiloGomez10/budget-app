@@ -10,7 +10,7 @@
 .p5-diff { grid-column: 1 / -1; text-align: center; font-size: 12px; border-top: 1px solid rgba(84, 56, 45, 0.15); padding-top: 6px; }
 .p5-pct { position: relative; display: block; }
 .p5-pct input { padding-right: 30px; }
-.p5-pct > span { position: absolute; right: 12px; top: 50%; transform: translateY(-50%); color: var(--muted); }
+.p5-pct > span:not(.stepper) { position: absolute; right: 50px; pointer-events: none; top: 50%; transform: translateY(-50%); color: var(--muted); }
 .p5-foot { display: flex; justify-content: space-between; font-size: 12px; color: var(--muted); border-top: 1px solid var(--card-border); padding-top: 10px; margin-top: auto; }
 .p5-foot b { color: var(--text); font-variant-numeric: lining-nums tabular-nums; }
 

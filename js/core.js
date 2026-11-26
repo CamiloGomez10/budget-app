@@ -882,8 +882,8 @@ const App = (() => {
     refresh();
 
     $('#txCancel').addEventListener('click', () => dlg.close());
-    if (editing) $('#txDelete').addEventListener('click', () => {
-      if (!confirmDialog('Ta bort transaktionen?')) return;
+    if (editing) $('#txDelete').addEventListener('click', async () => {
+      if (!await confirmDialog('Ta bort transaktionen?')) return;
       update(s => { s.transactions = s.transactions.filter(x => x.id !== t.id); });
       dlg.close();
     });
@@ -923,8 +923,38 @@ const App = (() => {
     $('[name=amount]').focus();
   }
 
-  function confirmDialog(message) {
-    return window.confirm(message);
+  // Bekräftelseruta i appens tema. Returnerar ett löfte: true = Ja, false = Avbryt.
+  // opts: { ok: knapptext, danger: röd knapp (standard för "Ta bort") }
+  function confirmDialog(message, opts = {}) {
+    return new Promise(resolve => {
+      const okLabel = opts.ok || (/^ta bort/i.test(message) ? 'Ta bort' : 'Fortsätt');
+      const danger = opts.danger ?? /ta bort|arkiv/i.test(okLabel + message);
+      const dlg = document.createElement('dialog');
+      dlg.className = 'dialog confirm-dialog';
+      dlg.innerHTML = `<form method="dialog" class="dialog-form">
+          <p class="confirm-text">${esc(message)}</p>
+          <div class="dialog-actions">
+            <button type="button" class="btn btn-secondary" value="cancel">Avbryt</button>
+            <button type="submit" class="btn ${danger ? 'btn-danger-solid' : 'btn-primary'}" value="ok">${esc(okLabel)}</button>
+          </div>
+        </form>`;
+      document.body.appendChild(dlg);
+      let done = false;
+      const finish = ok => {
+        if (done) return;
+        done = true;
+        if (dlg.open) dlg.close();
+        dlg.remove();
+        resolve(ok);
+      };
+      dlg.querySelector('[value=cancel]').addEventListener('click', () => finish(false));
+      dlg.querySelector('form').addEventListener('submit', e => { e.preventDefault(); finish(true); });
+      dlg.addEventListener('click', e => { if (e.target === dlg) finish(false); }); // klick utanför
+      dlg.addEventListener('cancel', e => { e.preventDefault(); finish(false); });  // Esc
+      dlg.addEventListener('close', () => finish(false));
+      dlg.showModal();
+      dlg.querySelector('[value=ok]').focus();
+    });
   }
 
   // ---------- Namnbyten (uppdaterar allt som pekar på namnet) ----------

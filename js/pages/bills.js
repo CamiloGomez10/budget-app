@@ -145,7 +145,7 @@
         if (e.target.value) { selected = e.target.value; App.render(); }
       });
 
-      root.addEventListener('click', e => {
+      root.addEventListener('click', async e => {
         const btn = e.target.closest('button');
         if (!btn) return;
         const find = id => App.state.bills.find(b => b.id === id);
@@ -173,7 +173,7 @@
           });
         } else if (btn.dataset.delete) {
           const b = find(btn.dataset.delete);
-          if (App.confirm(`Ta bort räkningen "${b.name}"? Den försvinner från alla månader. Betalningar finns kvar som transaktioner.`)) {
+          if (await App.confirm(`Ta bort räkningen "${b.name}"? Den försvinner från alla månader. Betalningar finns kvar som transaktioner.`)) {
             App.update(s => { s.bills = s.bills.filter(x => x.id !== b.id); });
           }
         }

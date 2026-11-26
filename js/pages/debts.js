@@ -148,7 +148,7 @@
       });
       const claim = (s, id, cats) => s.debts.forEach(x => { if (x.id !== id) x.categories = (x.categories || []).filter(c => !cats.includes(c)); });
 
-      root.addEventListener('click', e => {
+      root.addEventListener('click', async e => {
         const row = e.target.closest('[data-tx]');
         if (row) { const t = App.state.transactions.find(x => x.id === row.dataset.tx); if (t) App.openTransactionDialog({ ...t }); return; }
         const btn = e.target.closest('button');
@@ -172,7 +172,7 @@
             overline: 'Skuld', title: 'Redigera skuld', body: debtFields(App.state, d),
             onSubmit(f) { const next = readDebt(f); App.update(s => { claim(s, d.id, next.categories); Object.assign(s.debts.find(x => x.id === d.id), next); }); },
           });
-        } else if (btn.dataset.delete && App.confirm(`Ta bort skulden "${d.name}"? Betalningarna finns kvar som vanliga transaktioner.`)) {
+        } else if (btn.dataset.delete && await App.confirm(`Ta bort skulden "${d.name}"? Betalningarna finns kvar som vanliga transaktioner.`)) {
           App.update(s => {
             s.debts = s.debts.filter(x => x.id !== d.id);
             s.bills.forEach(b => { if (b.debtId === d.id) delete b.debtId; });

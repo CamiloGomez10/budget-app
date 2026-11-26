@@ -164,7 +164,7 @@
         }
       });
 
-      root.addEventListener('click', e => {
+      root.addEventListener('click', async e => {
         const btn = e.target.closest('button[data-reconcile], button[data-default], button[data-remove], button[data-restore]');
         if (!btn) return;
         const { reconcile, default: def, remove, restore } = btn.dataset;
@@ -188,14 +188,14 @@
           if (!a) return;
           const used = App.state.transactions.some(t => t.accountId === a.id) || calc.accountTx(a.id).length > 0;
           if (used) {
-            if (!App.confirm(`Kontot "${a.name}" har transaktioner. Det arkiveras i stället för att tas bort, så att historiken finns kvar. Fortsätta?`)) return;
+            if (!await App.confirm(`Kontot "${a.name}" har transaktioner. Det arkiveras i stället för att tas bort, så att historiken finns kvar.`, { ok: 'Arkivera' })) return;
             App.update(st => {
               const x = st.accounts.find(y => y.id === a.id);
               x.archived = true;
               x.categories = [];
               if (st.settings.defaultAccountId === a.id) st.settings.defaultAccountId = '';
             });
-          } else if (App.confirm(`Ta bort kontot "${a.name}"?`)) {
+          } else if (await App.confirm(`Ta bort kontot "${a.name}"?`)) {
             App.update(st => {
               st.accounts = st.accounts.filter(x => x.id !== a.id);
               st.goals.forEach(g => { if (g.accountId === a.id) g.accountId = ''; });

@@ -110,13 +110,13 @@
         if (row && (e.key === 'Enter' || e.key === ' ') && e.target === row) { e.preventDefault(); openEdit(row); }
       });
       root.querySelector('#txNew').addEventListener('click', () => App.openTransactionDialog());
-      root.querySelector('#txList').addEventListener('click', e => {
+      root.querySelector('#txList').addEventListener('click', async e => {
         if (e.target.closest('#txMore')) { limit += PAGE_SIZE; refresh(); return; }
         const btn = e.target.closest('.tx-del');
         if (!btn) { const row = e.target.closest('[data-edit]'); if (row) openEdit(row); return; }
         const tx = App.state.transactions.find(t => t.id === btn.dataset.id);
         if (!tx) return;
-        if (!App.confirm(`Ta bort ”${tx.title || tx.category}” (${fmt.money(tx.amount)})?`)) return;
+        if (!await App.confirm(`Ta bort ”${tx.title || tx.category}” (${fmt.money(tx.amount)})?`)) return;
         App.update(st => { st.transactions = st.transactions.filter(t => t.id !== tx.id); });
       });
     },
