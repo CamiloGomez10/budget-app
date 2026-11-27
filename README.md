@@ -30,7 +30,7 @@ budgetkonto, och varje konto ser bara sin egen budget.
 I Claude: *Inställningar → Kopplingar (Connectors) → Lägg till egen koppling*.
 Namn: `Budget`. Adress:
 
-    https://zbcfcqsigyoqtjkwuqtq.supabase.co/functions/v1/budget-mcp
+    https://yimveqgkicdyqfchycyw.supabase.co/functions/v1/budget-mcp
 
 Tryck *Anslut*, logga in med ditt budgetkonto och tryck *Godkänn*. Din vän gör
 samma sak i sin Claude med sitt eget budgetkonto.

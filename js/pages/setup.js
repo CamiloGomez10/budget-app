@@ -212,9 +212,13 @@
       });
 
       const backup = ui.card({
-        overline: 'Säkerhetskopia', title: 'Ladda ner din data',
-        body: `<p class="set-text">Allt sparas automatiskt, men vill du ha en egen kopia ifall att kan du ladda ner all data som en fil.</p>
-          <button class="btn btn-secondary" id="setBackup">${ui.icon('down', 14)} Ladda ner säkerhetskopia</button>`,
+        overline: 'Säkerhetskopia', title: 'Ladda ner eller läs in din data',
+        body: `<p class="set-text">Allt sparas automatiskt, men vill du ha en egen kopia ifall att kan du ladda ner all data som en fil. En sparad fil kan läsas in igen, till exempel på ett nytt konto.</p>
+          <div class="set-backup-actions">
+            <button class="btn btn-secondary" id="setBackup">${ui.icon('down', 14)} Ladda ner säkerhetskopia</button>
+            <label class="btn btn-secondary">Läs in säkerhetskopia<input type="file" accept=".json,application/json" id="setRestore" hidden></label>
+          </div>
+          <p class="set-error" id="restoreError" role="alert"></p>`,
       });
 
       return `<div class="grid-2">${foundation}${parentsCard}</div>${categories}${backup}`;
@@ -233,6 +237,28 @@
         a.click();
         a.remove();
         setTimeout(() => URL.revokeObjectURL(a.href), 1000);
+      });
+
+      // Läs in en säkerhetskopia: ersätter all data på kontot (frågar först)
+      const restore = root.querySelector('#setRestore');
+      restore.addEventListener('change', async () => {
+        const file = restore.files[0];
+        restore.value = '';
+        if (!file) return;
+        const err = root.querySelector('#restoreError');
+        err.textContent = '';
+        let data;
+        try {
+          const json = JSON.parse(await file.text());
+          data = json && json.app === 'budget' ? json.data : json;
+          if (!data || data.version !== 2 || !Array.isArray(data.transactions)) throw new Error('fel format');
+        } catch (e) {
+          err.textContent = 'Filen gick inte att läsa. Välj en säkerhetskopia som du laddat ner från appen.';
+          return;
+        }
+        const n = data.transactions.length;
+        if (!await App.confirm(`Läsa in säkerhetskopian (${n} transaktioner)? Den ersätter all data som finns på kontot nu.`, { ok: 'Läs in', danger: true })) return;
+        App.replaceState(data);
       });
 
       root.querySelector('#setForm').addEventListener('submit', e => {

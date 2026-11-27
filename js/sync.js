@@ -3,9 +3,9 @@
 // fungerar utan internet; ändringarna skickas upp när du är online igen.
 // Databasens regler (RLS) gör att bara ditt inloggade konto kan läsa raden.
 (() => {
-  const SUPABASE_URL = 'https://zbcfcqsigyoqtjkwuqtq.supabase.co';
+  const SUPABASE_URL = 'https://yimveqgkicdyqfchycyw.supabase.co';
   // Publik nyckel – får synas i koden. Skyddet sitter i databasens regler.
-  const SUPABASE_KEY = 'sb_publishable_ffQZZ49USPnfiQmb6ylN-w_o9a2teqK';
+  const SUPABASE_KEY = 'sb_publishable_KuYFItZcUC3YaBg0z-1jAw_qLRfnisN';
   const TABLE = 'budget_state';
   const META = 'budget-sync';
   const { esc } = App;

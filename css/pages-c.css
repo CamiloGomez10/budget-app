@@ -65,3 +65,4 @@
 .set-checks { display: flex; flex-direction: column; align-items: flex-start; gap: 2px; }
 .set-checks .check { align-self: flex-start; min-height: 32px; }
 .set-tag-shared { background: #dfe9e1; color: #2f5d3e; }
+.set-backup-actions { display: flex; gap: 8px; flex-wrap: wrap; }
