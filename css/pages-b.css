@@ -134,3 +134,35 @@
 .debt-type span { text-align: center; white-space: nowrap; padding: 7px 4px; font-size: 12.5px; }
 .debt-type-help { font-size: 12px; margin: 0; }
 
+/* Återkommande: ruta + förklaring under, eller notis när posten betalar en räkning */
+.tx-f-rec { grid-column: 1 / -1; display: flex; flex-direction: column; align-items: flex-start; gap: 2px; }
+.tx-f-rec:not(:has(:checked)) p { display: none; }
+.tx-f-rec p, .tx-f-billnote { margin: 0; font-size: 13px; }
+.tx-f-rec .check { align-self: flex-start; min-height: 30px; }
+.tx-f-rec p { padding-left: 24px; }
+.tx-f-billnote { grid-column: 1 / -1; }
+/* Räkningar: två kolumner (att betala, betalda) med en rad per räkning */
+.bill-cols { display: grid; grid-template-columns: repeat(auto-fit, minmax(300px, 1fr)); gap: 18px; align-items: start; }
+.bill-col { background: var(--card); border: 1px solid var(--card-border); border-radius: 16px; padding: 16px; display: flex; flex-direction: column; gap: 10px; }
+.bill-col-head { display: flex; justify-content: space-between; align-items: baseline; padding: 0 4px 2px; }
+.bill-col-head .card-title { margin: 0; font-size: 21px; }
+.bill-col-sum { font-family: var(--serif); font-size: 17px; color: var(--muted); }
+.bill-col-empty { margin: 2px 4px 4px; font-size: 13px; }
+.bill-card { display: flex; align-items: center; gap: 10px; background: var(--white); border: 1px solid var(--card-border); border-radius: 12px; padding: 8px 12px 8px 8px; }
+.bill-card.is-paid { background: transparent; }
+.bill-card.is-paid .amount, .bill-card.is-paid .bill-card-name b { color: var(--muted); }
+.bill-card.is-late { border-color: var(--rose); }
+.bill-card-open { flex: 1; min-width: 0; display: flex; align-items: center; gap: 12px; background: none; border: 0; padding: 0; font: inherit; color: inherit; text-align: left; cursor: pointer; }
+.bill-card .date-badge { width: 40px; height: 42px; border-radius: 9px; }
+.bill-card .date-badge b { font-size: 16px; }
+.bill-card.is-late .date-badge { background: #f1d9cf; color: #8a3a22; }
+.bill-card-name { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 2px; }
+.bill-card-name b { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.bill-card-name small { font-size: 12px; color: var(--muted); }
+.bill-card .amount { font-size: 16px; white-space: nowrap; }
+.bill-card .btn-primary { background: var(--dark); color: var(--white); }
+.bill-rec { color: var(--caramel); font-weight: 700; margin-right: 5px; }
+.bill-late { color: var(--rose); font-weight: 600; }
+.bill-next-head { margin: 10px 4px 0; padding-top: 12px; border-top: 1px dashed var(--card-border); }
+.bill-legend { font-size: 12px; margin: 10px 4px 0; }
+.bill-del { align-self: flex-start; margin-top: 4px; }

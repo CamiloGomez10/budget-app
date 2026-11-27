@@ -124,39 +124,60 @@
         </div>`;
 
       const stats = `<div class="grid-4">
-        ${ui.stat({ label: payday ? 'Räkningar denna lönemånad' : 'Räkningar denna månad', value: bills.length, accent: 'var(--dark)' })}
+        ${ui.stat({ label: payday ? 'Denna lönemånad' : 'Denna månad', value: bills.length, accent: 'var(--dark)' })}
         ${ui.stat({ label: bills.some(b => b.shared) ? 'Din del att betala' : 'Totalt att betala', value: fmt.money(total), accent: 'var(--rose)' })}
         ${ui.stat({ label: 'Betalt', value: fmt.money(paid), accent: 'var(--caramel)' })}
         ${ui.stat({ label: 'Kvar', value: fmt.money(total - paid), accent: 'var(--dark)' })}
       </div>`;
 
-      const list = ui.card({
-        overline: payday ? 'Vald lönemånad' : 'Vald månad', title: 'Kommande räkningar',
-        right: `<span>${payday ? rangeText : fmt.cap(fmt.month(selected))}</span>`,
-        body: bills.length ? `<ul class="rows">${bills.map(b => `
-          <li class="bill-row">
-            <span class="bill-dot" style="background:${b.debtId ? 'var(--dark)' : 'var(--caramel)'}"></span>
-            <div class="bill-main">
-              <div class="bill-line">
-                <b>${fmt.dateShort(b.date)}</b>
-                <span class="bill-name">${esc(b.name)}</span>
-                ${b.isPaid ? ui.pill('Betald', 'dark') : ''}
-                <span class="amount bill-amount">${fmt.money(b.amount)}${b.shared ? `<small class="bill-mine">din del ${fmt.money(b.mine)}</small>` : ''}</span>
-              </div>
-              <p class="muted">${[b.debtId ? (b.recurrence === 'once' ? 'Skuld att betala' : 'Avbetalning') : RECURRENCE[b.recurrence] || '', b.category, calc.accountName(b.accountId)].filter(Boolean).map(esc).join(' · ')}${b.plannedDate && b.plannedDate !== b.date ? ` · flyttad från ${fmt.dateShort(b.plannedDate)} (helg/röd dag)` : ''}${b.isPaid ? ` · betald ${fmt.dateShort(b.tx.date)}` : ''}</p>
-              <div class="bill-actions">
-                ${b.isPaid
-                  ? `<button class="btn btn-small" data-show="${b.tx.id}">Visa betalning</button>`
-                  : `<button class="btn btn-secondary" data-pay="${b.id}" data-date="${b.date}" data-month="${b.month}">Betala</button>`}
-                ${b.auto
-                  ? '<a class="btn btn-small" href="#/skulder">Visa skuld</a>'
-                  : `<button class="btn btn-small" data-edit="${b.id}">Redigera</button>
-                <button class="icon-btn" data-delete="${b.id}" aria-label="Ta bort ${esc(b.name)}">${ui.icon('x', 14)}</button>`}
-              </div>
-            </div>
-          </li>`).join('')}</ul>`
-          : ui.empty(payday ? 'Inga räkningar den här lönemånaden' : 'Inga räkningar den här månaden', 'Lägg till en räkning i formuläret nedan.'),
-      });
+      // Räkningarna som enkla rader i två kolumner: att betala och betalda.
+      // Sista veckan i perioden visas också nästa periods räkningar under "Att betala".
+      const withShare = b => {
+        const shared = calc.isShared(b.category);
+        const mine = !shared ? b.amount : b.mine != null ? b.mine : calc.splitShare(b.amount, calc.shareRatio(App.period.keyOf(b.date), b.category)).mine;
+        return { ...b, mine, shared };
+      };
+      const todayIso0 = App.iso(today());
+      const nextKey = App.addMonths(selected, 1);
+      const nr = App.period.range(nextKey);
+      const showNext = selected === App.period.current() && App.period.daysLeft(selected) <= 7;
+      const nextBills = showNext ? calc.billsInRange(nr.start, nr.end).map(withShare).filter(b => !b.isPaid) : [];
+      const recurring = b => b.recurrence !== 'once';
+      // Ett kort: datum, namn (med ↻ om den kommer tillbaka), belopp och Betala.
+      // Klick på kortet öppnar räkningen (eller betalningen när den är betald).
+      const billCard = b => {
+        const d = parseISO(b.date);
+        const late = !b.isPaid && b.date < todayIso0;
+        const open = b.isPaid ? `data-show="${b.tx.id}"` : b.auto ? 'data-debt="1"' : `data-edit="${b.id}" data-month="${b.month}"`;
+        const sub = b.isPaid ? `Betald ${fmt.dateShort(b.tx.date)}`
+          : late ? '<span class="bill-late">Försenad</span>'
+          : recurring(b) ? (b.debtId ? 'Avbetalning' : RECURRENCE[b.recurrence]) : (b.debtId ? 'Skuld' : 'En gång');
+        return `<article class="bill-card ${b.isPaid ? 'is-paid' : ''} ${late ? 'is-late' : ''}">
+          <button class="bill-card-open" ${open} aria-label="Öppna ${esc(b.name)}">
+            <span class="date-badge"><b>${d.getDate()}</b><small>${fmt.monthShort(d.getMonth())}</small></span>
+            <span class="bill-card-name"><b>${recurring(b) ? '<span class="bill-rec" title="Återkommande">↻</span>' : ''}${esc(b.name)}</b><small>${sub}</small></span>
+            <span class="amount">${fmt.money0(b.mine)}</span>
+          </button>
+          ${b.isPaid ? '' : `<button class="btn btn-small btn-primary" data-pay="${b.id}" data-date="${b.date}" data-month="${b.month}">Betala</button>`}
+        </article>`;
+      };
+      const column = (title, items, emptyText, extra = '') => `
+        <section class="bill-col">
+          <header class="bill-col-head">
+            <h3 class="card-title">${title}</h3>
+            <span class="bill-col-sum">${items.length ? fmt.money0(sum(items.map(b => b.mine))) : ''}</span>
+          </header>
+          ${items.length ? items.map(billCard).join('') : `<p class="muted bill-col-empty">${emptyText}</p>`}
+          ${extra}
+        </section>`;
+      const nextBlock = nextBills.length ? `
+          <p class="overline bill-next-head">${payday ? 'Nästa lönemånad' : 'Nästa månad'} · från ${fmt.dateShort(nr.start)}</p>
+          ${nextBills.map(billCard).join('')}` : '';
+      const list = `<div class="bill-cols">
+        ${column('Att betala', bills.filter(b => !b.isPaid), 'Allt är betalt.', nextBlock)}
+        ${column('Betalda', bills.filter(b => b.isPaid), 'Inget betalt ännu.')}
+      </div>
+      <p class="muted bill-legend"><span class="bill-rec">↻</span> kommer tillbaka varje månad eller år. Tryck på en räkning för att ändra eller ta bort den.</p>`;
 
       // Kalender över periodens dagar, måndag först. Första dagen och varje månadsskifte
       // får månadens namn, så att det syns när perioden går över till nästa månad.
@@ -223,10 +244,13 @@
         } else if (btn.dataset.show) {
           const t = App.state.transactions.find(x => x.id === btn.dataset.show);
           if (t) App.openTransactionDialog({ ...t });
+        } else if (btn.dataset.debt) {
+          location.hash = '#/skulder';
         } else if (btn.dataset.edit) {
           const b = find(btn.dataset.edit);
           App.formDialog({
-            overline: 'Räkning', title: 'Redigera räkning', body: billFields(App.state, b),
+            overline: 'Räkning', title: 'Redigera räkning',
+            body: `${billFields(App.state, b)}<button type="button" class="btn btn-danger btn-small bill-del" data-bill-del>Ta bort räkningen</button>`,
             onSubmit(f) {
               const next = readBill(f);
               if (!next.name || !next.dueDate) return false;
@@ -239,6 +263,12 @@
             },
           });
           wireBillShare(document.querySelector('#dialog form'));
+          document.querySelector('#dialog [data-bill-del]').addEventListener('click', async () => {
+            document.getElementById('dialog').close();
+            if (await App.confirm(`Ta bort räkningen "${b.name}"? Den försvinner från alla månader. Betalningar finns kvar som transaktioner.`)) {
+              App.update(s => { s.bills = s.bills.filter(x => x.id !== b.id); });
+            }
+          });
         } else if (btn.dataset.delete) {
           const b = find(btn.dataset.delete);
           if (await App.confirm(`Ta bort räkningen "${b.name}"? Den försvinner från alla månader. Betalningar finns kvar som transaktioner.`)) {

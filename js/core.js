@@ -190,7 +190,33 @@ const App = (() => {
       const { paid, ...rest } = b;
       return { category: '', accountId: '', ...rest };
     });
+    // Återkommande transaktioner blir månatliga räkningar: en per sak (namn, kategori, konto),
+    // utgår från den senaste betalningen som också räknas som den månadens.
+    // Fast id ("rec:"+transaktion) så att två enheter skapar samma räkning.
+    const latest = new Map();
+    if (!out.recurringV) out.transactions.forEach(t => {
+      if (!t.recurring || t.type !== 'expense' || t.billId) return;
+      const k = [t.title || t.category, t.category, t.accountId].join('|');
+      if (!latest.has(k) || t.date > latest.get(k).date) latest.set(k, t);
+    });
+    if (latest.size) {
+      out.bills = [...out.bills];
+      out.transactions = out.transactions.map(t => {
+        if (![...latest.values()].includes(t)) return t;
+        const id = `rec:${t.id}`;
+        if (!out.bills.some(b => b.id === id)) out.bills.push(billFromTx(t, id));
+        return { ...t, billId: id, billMonth: t.date.slice(0, 7) };
+      });
+    }
+    out.recurringV = 1; // görs bara en gång
     return out;
+  }
+
+  // Månatlig räkning byggd från en transaktion (samma namn, belopp, kategori och konto)
+  function billFromTx(t, id) {
+    const b = { id, name: t.title || t.category || 'Räkning', amount: t.total ?? t.amount, dueDate: t.date, recurrence: 'monthly', category: t.category || '', accountId: t.accountId || '' };
+    if (t.total != null) b.mine = t.amount;
+    return b;
   }
 
   function save() {
@@ -978,6 +1004,8 @@ const App = (() => {
     const mineStart = editing && t.total != null ? t.amount : t.shareMine;
     const partner = calc.partnerName();
     const amount0 = editing && t.total != null ? t.total : t.amount;
+    // Betalning av en räkning: räkningen styr upprepningen, så rutan Återkommande behövs inte
+    const linkedBill = t.billId ? (state.bills.find(b => b.id === t.billId) || { name: t.title || 'räkning', recurrence: '' }) : null;
     dlg.innerHTML = `
       <form method="dialog" class="dialog-form" id="txForm">
         <p class="overline">${editing ? 'Ändra post' : 'Ny post'}</p>
@@ -1005,7 +1033,12 @@ const App = (() => {
             </div>
           </div>
           <p class="muted tx-move-hint" id="txMoveHint"></p>
-          <label class="check tx-f-rec"><input type="checkbox" name="recurring" ${t.recurring ? 'checked' : ''}> Återkommande</label>
+          ${linkedBill
+            ? `<p class="muted tx-f-billnote">Betalning av räkningen <b>${esc(linkedBill.name)}</b>${linkedBill.recurrence === 'monthly' ? ' (varje månad)' : ''}. Ändra räkningen under <a class="link" href="#/rakningar">Räkningar</a>.</p>`
+            : `<div class="tx-f-rec">
+                <label class="check"><input type="checkbox" name="recurring" ${t.recurring ? 'checked' : ''}> Återkommande</label>
+                <p class="muted">Skapar en räkning varje månad med samma namn, belopp, kategori och konto. Den här betalningen räknas som månadens. Allt kan ändras under Räkningar.</p>
+              </div>`}
         </div>
         <p class="muted tx-sign-hint">Ett negativt belopp betyder pengar tillbaka, t.ex. ett uttag från sparandet eller en retur.</p>
         <div class="dialog-actions">
@@ -1036,7 +1069,7 @@ const App = (() => {
       show('tx-f-cat', type !== 'transfer');
       show('tx-f-to', type === 'transfer');
       show('tx-f-debt', type === 'expense');
-      show('tx-f-rec', type !== 'transfer');
+      show('tx-f-rec', type === 'expense');
       $('#txAccLabel').textContent = type === 'transfer' ? 'Från konto' : 'Konto';
       const target = type === 'expense' && calc.accountForCategory(catSelect.value);
       const hint = $('#txMoveHint');
@@ -1080,6 +1113,7 @@ const App = (() => {
     refresh();
 
     $('#txCancel').addEventListener('click', () => dlg.close());
+    form.querySelector('.tx-f-billnote a')?.addEventListener('click', () => dlg.close());
     if (editing) $('#txDelete').addEventListener('click', async () => {
       if (!await confirmDialog('Ta bort transaktionen?')) return;
       update(s => { s.transactions = s.transactions.filter(x => x.id !== t.id); });
@@ -1104,7 +1138,7 @@ const App = (() => {
         id: editing ? t.id : uid(), date: f.get('date'), type,
         category: type === 'transfer' ? 'Överföring' : f.get('category'),
         title: f.get('title').trim(), accountId: f.get('accountId') || '', amount,
-        recurring: type !== 'transfer' && f.get('recurring') === 'on',
+        recurring: type === 'expense' && (t.billId ? !!t.recurring : f.get('recurring') === 'on'),
       };
       if (type === 'transfer') tx.toAccountId = f.get('toAccountId');
       // Delad utgift: hela beloppet sparas i total, din del blir transaktionens belopp
@@ -1116,7 +1150,11 @@ const App = (() => {
       if (goalId !== undefined) tx.goalId = goalId;
       if (debtId !== undefined) tx.debtId = debtId;
       if (t.billId) { tx.billId = t.billId; tx.billMonth = t.billMonth; }
+      // Nyss ikryssad Återkommande: skapa en månatlig räkning och låt den här betalningen vara månadens
+      const newBill = tx.recurring && !t.billId && !t.recurring ? billFromTx(tx, uid()) : null;
+      if (newBill) { tx.billId = newBill.id; tx.billMonth = tx.date.slice(0, 7); }
       update(s => {
+        if (newBill) s.bills.push(newBill);
         s.transactions = s.transactions.filter(x => x.id !== tx.id);
         s.transactions.unshift(tx);
         s.transactions.sort((a, b) => b.date.localeCompare(a.date));
