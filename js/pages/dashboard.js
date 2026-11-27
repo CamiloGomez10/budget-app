@@ -53,13 +53,13 @@
       const sp = calc.spendable(key);
       const stats = `
         <div class="grid-4">
-          ${sp ? `<button type="button" class="stat stat-dark dash-spend" id="dashSpend" aria-label="Kvar att spendera: ${fmt.money(sp.left)}. Visa uträkningen">
+          ${ui.stat({ label: 'Total inkomst', value: fmt.money(t.income), hint: rangeLabel ? `Lönemånad ${rangeLabel}` : `Registrerat i ${monthName}`, variant: 'dark' })}
+          ${ui.stat({ label: 'Totala utgifter', value: fmt.money(t.expense), hint: t.income > 0 ? `${fmt.pct(t.expense / t.income)} av inkomsten` : '–' })}
+          ${sp ? `<button type="button" class="stat stat-tan dash-spend" id="dashSpend" aria-label="Kvar att spendera: ${fmt.money(sp.left)}. Visa uträkningen">
               <p class="stat-label">Kvar att spendera</p>
               <p class="stat-value">${fmt.money(sp.left)}</p>
-              <p class="stat-hint">Fram till ${fmt.dateShort(sp.until)} · visa uträkning</p>
-            </button>` : ui.stat({ label: 'Kvar att spendera', value: '–', hint: 'Lägg till ett lönekonto under Förmögenhet', variant: 'dark' })}
-          ${sp ? ui.stat({ label: `Saldo på ${esc(sp.account.name)}`, value: fmt.money(sp.balance), hint: '<a class="link" href="#/formogenhet">Stäm av mot banken</a>', variant: 'tan' }) : ''}
-          ${ui.stat({ label: 'Månadens resultat', value: `<span class="${t.net < 0 ? 'neg' : ''}">${fmt.money(t.net)}</span>`, hint: `Inkomster ${fmt.money0(t.income)} − utgifter ${fmt.money0(t.expense)}` })}
+              <p class="stat-hint">Saldo ${fmt.money0(sp.balance)} − obetalt ${fmt.money0(sp.owed)}</p>
+            </button>` : ui.stat({ label: 'Kvar att spendera', value: '–', hint: 'Lägg till ett lönekonto under Förmögenhet', variant: 'tan' })}
           ${ui.stat({ label: 'Nettoförmögenhet', value: fmt.money(calc.netWorth()), hint: '<a class="link" href="#/formogenhet">Tillgångar − skulder</a>' })}
         </div>`;
 
@@ -80,7 +80,7 @@
 
       const strip = ui.strip([
         { label: 'Sparkvot', value: t.income > 0 ? fmt.pct(remainingShare, 1) : '–' },
-        { label: 'Utrymme per dag', value: fmt.money(Math.max(0, sp ? sp.left : t.net) / daysLeft), hint: `${daysLeft} dagar kvar till lön` },
+        { label: 'Utrymme per dag', value: fmt.money(Math.max(0, t.net) / daysLeft), hint: `${daysLeft} dagar kvar` },
         { label: 'Buffert räcker', value: runway == null ? '–' : `${fmt.num(runway, 1)} mån` },
       ]);
 
