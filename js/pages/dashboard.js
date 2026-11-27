@@ -49,11 +49,17 @@
           </div>
         </div>`;
 
+      // Kvar att spendera följer kontosaldot men tar hänsyn till månadens obetalda räkningar
+      const sp = calc.spendable(key);
       const stats = `
         <div class="grid-4">
-          ${ui.stat({ label: 'Total inkomst', value: fmt.money(t.income), hint: rangeLabel ? `Lönemånad ${rangeLabel}` : `Registrerat i ${monthName}`, variant: 'dark' })}
-          ${ui.stat({ label: 'Totala utgifter', value: fmt.money(t.expense), hint: t.income > 0 ? `${fmt.pct(t.expense / t.income)} av inkomsten` : '–' })}
-          ${ui.stat({ label: 'Kvar av inkomsten', value: fmt.money(t.net), hint: 'Aktuellt saldo', variant: 'tan' })}
+          ${sp ? `<button type="button" class="stat stat-dark dash-spend" id="dashSpend" aria-label="Kvar att spendera: ${fmt.money(sp.left)}. Visa uträkningen">
+              <p class="stat-label">Kvar att spendera</p>
+              <p class="stat-value">${fmt.money(sp.left)}</p>
+              <p class="stat-hint">Fram till ${fmt.dateShort(sp.until)} · visa uträkning</p>
+            </button>` : ui.stat({ label: 'Kvar att spendera', value: '–', hint: 'Lägg till ett lönekonto under Förmögenhet', variant: 'dark' })}
+          ${sp ? ui.stat({ label: `Saldo på ${esc(sp.account.name)}`, value: fmt.money(sp.balance), hint: '<a class="link" href="#/formogenhet">Stäm av mot banken</a>', variant: 'tan' }) : ''}
+          ${ui.stat({ label: 'Månadens resultat', value: `<span class="${t.net < 0 ? 'neg' : ''}">${fmt.money(t.net)}</span>`, hint: `Inkomster ${fmt.money0(t.income)} − utgifter ${fmt.money0(t.expense)}` })}
           ${ui.stat({ label: 'Nettoförmögenhet', value: fmt.money(calc.netWorth()), hint: '<a class="link" href="#/formogenhet">Tillgångar − skulder</a>' })}
         </div>`;
 
@@ -74,7 +80,7 @@
 
       const strip = ui.strip([
         { label: 'Sparkvot', value: t.income > 0 ? fmt.pct(remainingShare, 1) : '–' },
-        { label: 'Utrymme per dag', value: fmt.money(Math.max(0, t.net) / daysLeft), hint: `${daysLeft} dagar kvar` },
+        { label: 'Utrymme per dag', value: fmt.money(Math.max(0, sp ? sp.left : t.net) / daysLeft), hint: `${daysLeft} dagar kvar till lön` },
         { label: 'Buffert räcker', value: runway == null ? '–' : `${fmt.num(runway, 1)} mån` },
       ]);
 
@@ -135,6 +141,25 @@
     },
 
     mount(root, s) {
+      // Uträkningen bakom Kvar att spendera
+      const spendBtn = root.querySelector('#dashSpend');
+      if (spendBtn) spendBtn.addEventListener('click', () => {
+        const sp = calc.spendable();
+        const dlg = document.getElementById('dialog');
+        dlg.innerHTML = `<form method="dialog" class="dialog-form">
+            <p class="overline">Kvar att spendera</p>
+            <h2 class="card-title" style="margin-bottom:12px">${fmt.money(sp.left)}</h2>
+            <ul class="rows dash-spend-rows">
+              <li><span style="flex:1">Saldo på ${esc(sp.account.name)}</span><b>${fmt.money(sp.balance)}</b></li>
+              ${sp.due.map(b => `<li><span style="flex:1">${esc(b.name)} <span class="muted">· ${fmt.dateShort(b.date)}</span></span><b>−${fmt.money(b.amount)}</b></li>`).join('')}
+              <li class="dash-spend-total"><span style="flex:1"><b>Kvar att spendera</b></span><b>${fmt.money(sp.left)}</b></li>
+            </ul>
+            <p class="muted" style="margin-top:10px">${sp.due.length ? `Obetalda räkningar och skulder som dras från ${esc(sp.account.name)} fram till ${fmt.date(sp.until)}. När du trycker Betala på en räkning minskar saldot och listan lika mycket.` : 'Inga obetalda räkningar fram till nästa lön.'}</p>
+            <div class="dialog-actions"><button class="btn btn-primary" type="submit">Stäng</button></div>
+          </form>`;
+        dlg.showModal();
+      });
+
       const key = period.current();
       const byCat = calc.byCategory(calc.txInMonth(key));
       const items = s.categories.map(c => ({ name: c.name, color: c.color, value: byCat[c.name] || 0 }))

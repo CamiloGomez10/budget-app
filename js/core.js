@@ -532,6 +532,26 @@ const App = (() => {
       }));
     },
 
+    // Kvar att spendera: saldot på standardkontot (lönekontot) minus det som fortfarande
+    // ska betalas från det kontot fram till nästa lön (obetalda räkningar och skulder,
+    // din del av delade). När en räkning betalas minskar båda lika mycket.
+    spendable(key = period.current()) {
+      const main = calc.defaultAccount();
+      if (!main) return null;
+      const r = period.range(key);
+      const balance = calc.accounts().find(a => a.id === main.id)?.balance || 0;
+      const due = calc.billsInRange(r.start, r.end)
+        .filter(b => !b.isPaid && (b.accountId || main.id) === main.id)
+        .map(b => {
+          const mine = calc.isShared(b.category)
+            ? (b.mine != null ? b.mine : calc.splitShare(b.amount, calc.shareRatio(period.keyOf(b.date), b.category)).mine)
+            : b.amount;
+          return { name: b.name, date: b.date, amount: Math.round(mine * 100) / 100 };
+        });
+      const owed = Math.round(sum(due.map(b => b.amount)) * 100) / 100;
+      return { account: main, balance, due, owed, left: Math.round((balance - owed) * 100) / 100, until: r.end };
+    },
+
     // Skulder som de såg ut ett visst datum (bara betalningar t.o.m. datumet räknas)
     debtsAt(until) {
       const paid = {};
