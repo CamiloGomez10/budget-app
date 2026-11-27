@@ -74,8 +74,12 @@
         body: `<ul class="dash-alerts">${alerts.map(a => `<li><span>${a}</span></li>`).join('')}</ul>`,
       }) : '';
 
+      // Sparkvot: det du sparat (utgifter i sparkategorier) plus det som är kvar, delat med inkomsten.
+      // En överföring till sparandet höjer alltså kvoten i stället för att sänka den.
+      const saved = calc.txInMonth(key).filter(x => x.type === 'expense' && calc.isSaving(x.category)).reduce((a, x) => a + x.amount, 0);
+      const saveRate = t.income > 0 ? (saved + t.net) / t.income : 0;
       const strip = ui.strip([
-        { label: 'Sparkvot', value: t.income > 0 ? fmt.pct(remainingShare, 1) : '–' },
+        { label: 'Sparkvot', value: t.income > 0 ? fmt.pct(saveRate, 1) : '–', hint: t.income > 0 ? `Sparat ${fmt.money0(saved)} + kvar ${fmt.money0(Math.max(0, t.net))}` : '' },
         { label: 'Utrymme per dag', value: fmt.money(Math.max(0, t.net) / daysLeft), hint: `${daysLeft} dagar kvar` },
         { label: 'Buffert räcker', value: runway == null ? '–' : `${fmt.num(runway, 1)} mån` },
       ]);
