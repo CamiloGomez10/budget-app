@@ -125,3 +125,11 @@
 .tx-share-split .muted { grid-column: 1 / -1; font-size: 12px; margin: 0; }
 .bill-mine { display: block; font-family: var(--sans); font-size: 11px; color: var(--muted); text-align: right; }
 .bill-share { display: flex; flex-direction: column; gap: 6px; background: var(--track); border-radius: 12px; padding: 10px 12px; }
+
+/* Skulder per långivare */
+.debt-lenders li { gap: 10px; }
+.debt-lender-sum { font-size: 17px; white-space: nowrap; }
+.debt-lender-help { font-size: 12px; margin-top: 10px; }
+.debt-type { display: grid; grid-template-columns: 1fr 1fr; width: 100%; margin: 0 0 4px; }
+.debt-type span { text-align: center; white-space: nowrap; padding: 7px 4px; font-size: 12.5px; }
+.debt-type-help { font-size: 12px; margin: 0; }

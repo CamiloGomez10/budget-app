@@ -102,7 +102,9 @@ const App = (() => {
       // Sparat = startAmount + kopplade transaktioner (goalId, eller en kategori i categories).
       goals: [],                   // { id, name, target, startAmount, categories: [], date, accountId, notes }
       // Saldo = original + adjust − kopplade transaktioner (debtId, eller en kategori i categories).
-      debts: [],                   // { id, name, original, adjust, categories: [], apr, installment, extra, payDay, start, end, notes }
+      // Skuld: type 'invoice' = betala inom 30 dagar (dueDate), 'installment' = avbetalning (installment, extra, payDay, apr)
+      debts: [],                   // { id, type, name, lenderId, original, adjust, categories: [], dueDate, apr, installment, extra, payDay, notes }
+      lenders: [],                 // långivare som skulder kan höra till (t.ex. Klarna, Walley): { id, name }. Räknas inte som konton.
       snapshots: [],               // används inte längre (historiken räknas fram), finns kvar för gammal data
       paycheck: { start: iso(new Date(now.getFullYear(), now.getMonth(), 1)), end: iso(new Date(now.getFullYear(), now.getMonth() + 1, 0)), income: 0, alloc: {} },
       strategy: 'snowball',
@@ -139,6 +141,9 @@ const App = (() => {
       delete out.settings.sharing.rules;
     }
     if (!out.sharedTotals) out.sharedTotals = {};
+    if (!Array.isArray(out.lenders)) out.lenders = [];
+    // Skulder utan typ: med månadsbetalning är det en avbetalning, annars betala inom 30 dagar
+    (out.debts || []).forEach(d => { if (!d.type) d.type = Number(d.installment) > 0 ? 'installment' : 'invoice'; });
     // Äldre data utan inkomstkategorier: hämta dem från befintliga inkomster
     if (!Array.isArray(s.incomeCategories)) {
       const names = [...new Set((s.transactions || []).filter(t => t.type === 'income').map(t => t.category).filter(Boolean))];
@@ -278,7 +283,13 @@ const App = (() => {
     return (holidayCache[y] = set);
   }
   const isBankDay = d => d.getDay() !== 0 && d.getDay() !== 6 && !bankHolidays(d.getFullYear()).has(iso(d));
-
+  // Räkningar och skulder: faller dagen på en helg eller röd dag dras pengarna nästa bankdag
+  // (så fungerar autogiro, och en förfallodag på en helgdag räknas till nästa vardag).
+  function nextBankDay(dateIso) {
+    const d = parseISO(dateIso);
+    while (!isBankDay(d)) d.setDate(d.getDate() + 1);
+    return iso(d);
+  }
   function payDate(year, monthIndex) {
     const day = Math.min(Number(state.settings.period?.payday) || 25, new Date(year, monthIndex + 1, 0).getDate());
     const d = new Date(year, monthIndex, day);
@@ -505,6 +516,22 @@ const App = (() => {
       });
     },
 
+    // Långivaren en skuld hör till (eller null), och ett namn som visar båda: "Klarna · Soffa"
+    lenderOf: d => (d && d.lenderId ? (state.lenders || []).find(l => l.id === d.lenderId) || null : null),
+    debtLabel(d) { const l = calc.lenderOf(d); return l ? `${l.name} · ${d.name}` : d.name; },
+    // Skulder grupperade per långivare: [{ lender|null, debts, balance, monthly }]
+    debtsByLender() {
+      const debts = calc.debts();
+      const groups = (state.lenders || []).map(l => ({ lender: l, debts: debts.filter(d => d.lenderId === l.id) }));
+      const loose = debts.filter(d => !calc.lenderOf(d));
+      if (loose.length) groups.push({ lender: null, debts: loose });
+      return groups.map(g => ({
+        ...g,
+        balance: Math.round(sum(g.debts.map(d => d.balance)) * 100) / 100,
+        monthly: sum(g.debts.filter(d => d.balance > 0).map(d => (Number(d.installment) || 0) + (Number(d.extra) || 0))),
+      }));
+    },
+
     // Skulder som de såg ut ett visst datum (bara betalningar t.o.m. datumet räknas)
     debtsAt(until) {
       const paid = {};
@@ -573,18 +600,47 @@ const App = (() => {
     totalSaved: () => sum(calc.goals().map(g => g.current)),
 
     // Räkningar som infaller en viss månad, med datum och betalstatus
+    // Räkningar som skapas av skulderna själva (visas under Räkningar och i kalendern):
+    // betala-inom-30-dagar på förfallodagen, avbetalning varje månad på betalningsdagen.
+    // En skuld som redan har en egen räkning (Kopplad skuld) får ingen extra.
+    debtBillsForMonth(key) {
+      const manual = new Set(state.bills.map(b => b.debtId).filter(Boolean));
+      const now = iso(today());
+      return calc.debts().filter(d => !manual.has(d.id)).flatMap(d => {
+        const base = { id: `debt:${d.id}`, auto: true, name: calc.debtLabel(d), debtId: d.id, category: (d.categories || [])[0] || '', accountId: '', month: key };
+        const txs = calc.debtTx(d.id);
+        if ((d.type || 'invoice') === 'invoice') {
+          if (!d.dueDate || d.dueDate.slice(0, 7) !== key) return [];
+          const paid = d.balance <= 0;
+          if (paid && !txs.length) return [];
+          return [{ ...base, amount: paid ? d.paid : d.balance, date: nextBankDay(d.dueDate), plannedDate: d.dueDate, recurrence: 'once', isPaid: paid, tx: paid ? txs[0] : null }];
+        }
+        if (!d.payDay) return [];
+        const pay = (Number(d.installment) || 0) + (Number(d.extra) || 0);
+        if (!pay) return [];
+        const planned = `${key}-${pad2(Math.min(Number(d.payDay), daysInMonth(key)))}`;
+        const date = nextBankDay(planned);
+        const pk = period.keyOf(date);
+        const tx = txs.find(t => period.keyOf(t.date) === pk) || null;
+        // Bara kommande månader så länge skulden finns kvar, plus månader då den faktiskt betalades
+        if (!tx && (d.balance <= 0 || key < now.slice(0, 7))) return [];
+        return [{ ...base, amount: tx ? tx.amount : Math.min(pay, d.balance), date, plannedDate: planned, recurrence: 'monthly', isPaid: !!tx, tx }];
+      });
+    },
+
     billsForMonth(key) {
-      return state.bills.flatMap(b => {
+      return [...state.bills.flatMap(b => {
         const due = parseISO(b.dueDate);
         const dueKey = ym(due);
         if (b.recurrence === 'once' && dueKey !== key) return [];
         if (b.recurrence === 'yearly' && Number(key.slice(5)) !== due.getMonth() + 1) return [];
         if (dueKey > key && b.recurrence !== 'once') return [];
         const day = Math.min(due.getDate(), daysInMonth(key));
-        const date = `${key}-${pad2(day)}`;
+        const planned = `${key}-${pad2(day)}`;
+        const date = nextBankDay(planned);
         const tx = calc.billTx(b, key, date);
-        return [{ ...b, date, month: key, isPaid: !!tx, tx }];
-      }).sort((a, b) => a.date.localeCompare(b.date));
+        return [{ ...b, date, plannedDate: planned, month: key, isPaid: !!tx, tx }];
+      }), ...calc.debtBillsForMonth(key)].sort((a, b) => a.date.localeCompare(b.date));
     },
 
     // Transaktionen som betalade räkningen en viss månad: kopplad direkt, eller en utgift
@@ -602,7 +658,8 @@ const App = (() => {
     // Räkningar med förfallodag mellan två datum (ISO), över flera kalendermånader
     billsInRange(from, to) {
       const out = [];
-      for (let k = from.slice(0, 7); k <= to.slice(0, 7); k = addMonths(k, 1)) {
+      // En månad tidigare: en räkning i slutet av månaden kan flyttas fram till nästa bankdag
+      for (let k = addMonths(from.slice(0, 7), -1); k <= to.slice(0, 7); k = addMonths(k, 1)) {
         out.push(...calc.billsForMonth(k).filter(b => b.date >= from && b.date <= to));
       }
       return out;
@@ -918,7 +975,7 @@ const App = (() => {
           ${ui.field('<span id="txAccLabel">Konto</span>', `<select name="accountId">${accOpts(t.accountId, activeAccounts.length ? '' : 'Inget konto')}</select>`)}
           ${ui.field('Till konto', `<select name="toAccountId">${accOpts(t.toAccountId, 'Välj konto')}</select>`, 'tx-f-to')}
           ${goals.length ? ui.field('Sparmål', `<select name="goalId" id="txGoal"><option value="">Inget</option>${goals.map(g => `<option value="${g.id}" ${goal0?.id === g.id ? 'selected' : ''}>${esc(g.name)}</option>`).join('')}</select>`, 'tx-f-goal') : ''}
-          ${debts.length ? ui.field('Skuld', `<select name="debtId" id="txDebt"><option value="">Ingen</option>${debts.map(d => `<option value="${d.id}" ${debt0?.id === d.id ? 'selected' : ''}>${esc(d.name)}</option>`).join('')}</select>`, 'tx-f-debt') : ''}
+          ${debts.length ? ui.field('Skuld', `<select name="debtId" id="txDebt"><option value="">Ingen</option>${debts.map(d => `<option value="${d.id}" ${debt0?.id === d.id ? 'selected' : ''}>${esc(calc.debtLabel(d))}</option>`).join('')}</select>`, 'tx-f-debt') : ''}
           <div class="tx-share" id="txShare">
             <label class="check"><input type="checkbox" name="shared" ${wasShared ? 'checked' : ''}> Delad med ${esc(partner)}</label>
             <div class="tx-share-split" id="txShareSplit">
@@ -1256,6 +1313,6 @@ const App = (() => {
     renameCategory, renameParent, moveCategory, setCategoryOrder,
     uid, esc, iso, ym, parseISO, today, daysInMonth, addMonths, sum, clamp, pad2,
     fmt, calc, ui, charts, period, categoryColor,
-    openTransactionDialog, confirm: confirmDialog, bindTooltip, tipRow,
+    openTransactionDialog, confirm: confirmDialog, nextBankDay, bindTooltip, tipRow,
   };
 })();

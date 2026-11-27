@@ -131,14 +131,17 @@
           : ui.empty('Inga konton ännu', 'Lägg till ditt första konto i formuläret.'),
       });
 
+      // Skulder hos en långivare (t.ex. Klarna) visas som en rad med totalen
       const liabRows = [
-        ...calc.debts().filter(d => d.balance > 0).map(d => ({ name: d.name, value: d.balance })),
+        ...calc.debtsByLender().flatMap(g => (g.lender
+          ? (g.balance > 0 ? [{ name: g.lender.name, value: g.balance, sub: `${g.debts.filter(d => d.balance > 0).length} skulder` }] : [])
+          : g.debts.filter(d => d.balance > 0).map(d => ({ name: d.name, value: d.balance })))),
         ...accounts.filter(a => a.balance < 0).map(a => ({ name: a.name, value: -a.balance })),
       ];
       const debtsCard = ui.card({
         overline: 'Det du är skyldig', title: 'Skulder',
         right: `<b class="amount nw-sum">${fmt.money(liab)}</b>`,
-        body: `${liabRows.length ? `<ul class="rows">${liabRows.map(l => `<li><span style="flex:1">${esc(l.name)}</span><b>${fmt.money(l.value)}</b></li>`).join('')}</ul>` : '<p class="muted">Inga skulder. Snyggt!</p>'}
+        body: `${liabRows.length ? `<ul class="rows">${liabRows.map(l => `<li><span style="flex:1">${esc(l.name)}${l.sub ? ` <span class="muted">· ${esc(l.sub)}</span>` : ''}</span><b>${fmt.money(l.value)}</b></li>`).join('')}</ul>` : '<p class="muted">Inga skulder. Snyggt!</p>'}
           <p class="muted acc-help"><a class="link" href="#/skulder">Hantera skulder under Mål</a></p>`,
       });
       const add = ui.card({

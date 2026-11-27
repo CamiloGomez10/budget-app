@@ -30,7 +30,7 @@ type Valuation = { date: string; value: number };
 type Account = { id: string; name: string; type: string; startBalance?: number; categories?: string[]; archived?: boolean; valuations?: Valuation[] };
 type Category = { name: string; parent?: string; group?: string; debt?: boolean; color?: string };
 type Goal = { id: string; name: string; target: number; startAmount?: number; categories?: string[]; date?: string };
-type Debt = { id: string; name: string; original?: number; adjust?: number; categories?: string[] };
+type Debt = { id: string; name: string; lenderId?: string; original?: number; adjust?: number; categories?: string[] };
 type Bill = { id: string; name: string; amount: number; dueDate: string; recurrence: string; category?: string };
 type State = {
   transactions: Tx[]; accounts: Account[]; categories: Category[]; incomeCategories: Category[];
@@ -38,6 +38,7 @@ type State = {
   budgets: Record<string, Record<string, number>>;
   settings: { defaultAccountId?: string; period?: { mode?: string; payday?: number }; sharing?: { partner?: string; categories?: string[] } };
   sharedTotals?: Record<string, Record<string, number>>;
+  lenders?: { id: string; name: string }[];
   incomeLabel?: string;
 };
 
@@ -71,6 +72,8 @@ function bankHolidays(y: number) {
     `${y}-12-24`, `${y}-12-25`, `${y}-12-26`, `${y}-12-31`]);
 }
 const isBankDay = (d: Date) => d.getDay() !== 0 && d.getDay() !== 6 && !bankHolidays(d.getFullYear()).has(iso(d));
+// Helg eller röd dag: räkningar och skulder dras nästa bankdag
+const nextBankDay = (dateIso: string) => { const d = parseISO(dateIso); while (!isBankDay(d)) d.setDate(d.getDate() + 1); return iso(d); };
 
 // ---------- Beräkningar (samma som js/core.js) ----------
 function makeCalc(state: State) {
@@ -211,7 +214,7 @@ function makeCalc(state: State) {
       if (b.recurrence === "yearly" && Number(key.slice(5)) !== due.getMonth() + 1) return [];
       if (dueKey > key && b.recurrence !== "once") return [];
       const day = Math.min(due.getDate(), daysInMonth(key));
-      const date = `${key}-${pad2(day)}`;
+      const date = nextBankDay(`${key}-${pad2(day)}`);
       return [{ name: b.name, amount: b.amount, date, paid: !!billTx(b, key, date) }];
     });
   }
@@ -442,7 +445,8 @@ function buildServer(supabase: Db, userId: string) {
         ...(a.valuation ? { deposited: a.deposited, gain: a.gain, value_last_updated: a.valuation.date } : {}),
       })),
       goals: c.goals().map((g) => ({ name: g.name, saved: g.current, target: g.target, deadline: g.date || null })),
-      debts: debts.map((d) => ({ name: d.name, left: d.balance, paid: d.paid })),
+      debts: debts.map((d) => ({ name: d.name, lender: (state.lenders || []).find((l) => l.id === d.lenderId)?.name || null, left: d.balance, paid: d.paid })),
+      debt_per_lender: (state.lenders || []).map((l) => ({ lender: l.name, left: round(sum(debts.filter((d) => d.lenderId === l.id).map((d) => d.balance))) })),
       assets: round(assets), total_debt: round(totalDebt), net_worth: round(assets - totalDebt),
       upcoming_bills: bills.sort((a, b) => a.date.localeCompare(b.date)),
     });

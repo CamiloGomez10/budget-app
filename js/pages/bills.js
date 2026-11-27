@@ -49,7 +49,7 @@
         </div>
       </div>
       ${s.accounts.length ? ui.field('Betalas från', `<select name="accountId">${s.accounts.filter(a => !a.archived || a.id === accId).map(a => `<option value="${a.id}" ${a.id === accId ? 'selected' : ''}>${esc(a.name)}</option>`).join('')}</select>`) : ''}
-      ${s.debts.length ? ui.field('Kopplad skuld (valfritt)', `<select name="debtId"><option value="">Ingen</option>${s.debts.map(d => `<option value="${d.id}" ${d.id === b.debtId ? 'selected' : ''}>${esc(d.name)}</option>`).join('')}</select>`) : ''}`;
+      ${s.debts.length ? ui.field('Kopplad skuld (valfritt)', `<select name="debtId"><option value="">Ingen</option>${s.debts.map(d => `<option value="${d.id}" ${d.id === b.debtId ? 'selected' : ''}>${esc(calc.debtLabel(d))}</option>`).join('')}</select>`) : ''}`;
   }
   const readBill = f => {
     const b = {
@@ -143,13 +143,15 @@
                 ${b.isPaid ? ui.pill('Betald', 'dark') : ''}
                 <span class="amount bill-amount">${fmt.money(b.amount)}${b.shared ? `<small class="bill-mine">din del ${fmt.money(b.mine)}</small>` : ''}</span>
               </div>
-              <p class="muted">${[b.debtId ? 'Avbetalning' : RECURRENCE[b.recurrence] || '', b.category, calc.accountName(b.accountId)].filter(Boolean).map(esc).join(' · ')}${b.isPaid ? ` · betald ${fmt.dateShort(b.tx.date)}` : ''}</p>
+              <p class="muted">${[b.debtId ? (b.recurrence === 'once' ? 'Skuld att betala' : 'Avbetalning') : RECURRENCE[b.recurrence] || '', b.category, calc.accountName(b.accountId)].filter(Boolean).map(esc).join(' · ')}${b.plannedDate && b.plannedDate !== b.date ? ` · flyttad från ${fmt.dateShort(b.plannedDate)} (helg/röd dag)` : ''}${b.isPaid ? ` · betald ${fmt.dateShort(b.tx.date)}` : ''}</p>
               <div class="bill-actions">
                 ${b.isPaid
                   ? `<button class="btn btn-small" data-show="${b.tx.id}">Visa betalning</button>`
                   : `<button class="btn btn-secondary" data-pay="${b.id}" data-date="${b.date}" data-month="${b.month}">Betala</button>`}
-                <button class="btn btn-small" data-edit="${b.id}">Redigera</button>
-                <button class="icon-btn" data-delete="${b.id}" aria-label="Ta bort ${esc(b.name)}">${ui.icon('x', 14)}</button>
+                ${b.auto
+                  ? '<a class="btn btn-small" href="#/skulder">Visa skuld</a>'
+                  : `<button class="btn btn-small" data-edit="${b.id}">Redigera</button>
+                <button class="icon-btn" data-delete="${b.id}" aria-label="Ta bort ${esc(b.name)}">${ui.icon('x', 14)}</button>`}
               </div>
             </div>
           </li>`).join('')}</ul>`
@@ -202,7 +204,9 @@
       root.addEventListener('click', async e => {
         const btn = e.target.closest('button');
         if (!btn) return;
-        const find = id => App.state.bills.find(b => b.id === id);
+        // Räkningar från skulder (id "debt:…") finns inte i listan över egna räkningar
+        const find = id => App.state.bills.find(b => b.id === id)
+          || calc.debtBillsForMonth(btn.dataset.month || '').find(b => b.id === id);
         if (btn.dataset.pay) {
           // Betalningen blir en transaktion kopplad till räkningen och månaden
           const b = find(btn.dataset.pay);

@@ -101,7 +101,7 @@
         ...calc.goals().map(g => ({ name: g.name, share: g.target > 0 ? g.current / g.target : 0, text: `${fmt.money(g.current)} av ${fmt.money(g.target)}`, color: 'var(--dark)' })),
         ...calc.debts().filter(d => d.balance > 0).map(d => {
           const start = Math.max(0, (Number(d.original) || 0) + (Number(d.adjust) || 0));
-          return { name: d.name, share: start > 0 ? d.paid / start : 0, text: `${fmt.money(d.balance)} kvar att betala`, color: 'var(--caramel)' };
+          return { name: calc.debtLabel(d), share: start > 0 ? d.paid / start : 0, text: `${fmt.money(d.balance)} kvar att betala`, color: 'var(--caramel)' };
         }),
       ];
       const goals = ui.card({
@@ -124,7 +124,7 @@
               const d = App.parseISO(b.date);
               return `<li>
                 <span class="date-badge ${b.debtId ? 'date-badge-dark' : ''}"><b>${d.getDate()}</b><small>${fmt.monthShort(d.getMonth())}</small></span>
-                <div style="flex:1;min-width:0"><b>${esc(b.name)}</b><p class="muted">${b.debtId ? 'Månatlig avbetalning' : recurrenceLabel(b.recurrence)}${b.isPaid ? ' · Betald' : ''}</p></div>
+                <div style="flex:1;min-width:0"><b>${esc(b.name)}</b><p class="muted">${b.debtId ? (b.recurrence === 'once' ? 'Skuld att betala' : 'Månatlig avbetalning') : recurrenceLabel(b.recurrence)}${b.isPaid ? ' · Betald' : ''}</p></div>
                 <span class="amount" style="font-size:17px">${fmt.money0(b.amount)}</span>
               </li>`;
             }).join('')}</ul>`
