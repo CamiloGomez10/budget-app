@@ -18,6 +18,7 @@ const SHELL = [
   './js/monthpicker.js',
   './js/datepicker.js',
   './js/stepper.js',
+  './js/calcinput.js',
   './js/vendor/supabase.js',
   './js/core.js',
   './js/sync.js',
